@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Privacy: no network requests at all. Scripts and styles only from this folder. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" href="data:,">
+  <title>Follow Check</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <span>Follow Check</span>
+    </div>
+    <span class="privacy" title="Your files are read by this page in your browser. Nothing is sent anywhere.">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/></svg>
+      Runs locally &middot; nothing is uploaded
+    </span>
+    <button id="reset" class="btn ghost" type="button" hidden>Start over</button>
+  </header>
+
+  <main>
+    <!-- Upload -->
+    <section id="upload" class="card upload">
+      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-describedby="drop-help">
+        <svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <h1>Drop your Instagram export here</h1>
+        <p id="drop-help">The whole <strong>.zip</strong>, the unzipped folder, or just
+          <code>followers_1.json</code> (+ <code>followers_2.json</code>&hellip;) and <code>following.json</code>.</p>
+        <div class="drop-actions">
+          <label class="btn primary">
+            Choose ZIP or JSON files
+            <input id="file-input" type="file" accept=".zip,.json,application/zip,application/json" multiple hidden>
+          </label>
+          <label class="btn">
+            Choose unzipped folder
+            <input id="folder-input" type="file" webkitdirectory multiple hidden>
+          </label>
+        </div>
+      </div>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+
+      <details class="howto">
+        <summary>How do I get my export?</summary>
+        <ol>
+          <li>In Instagram open <strong>Accounts Center &rarr; Your information and permissions &rarr; Export your information</strong> (called <em>Download your information</em> in some versions).</li>
+          <li>Create an export, choose <strong>Some of your information</strong>, and tick only <strong>Followers and following</strong>.</li>
+          <li>Pick <strong>Download to device</strong>, date range <strong>All time</strong>, format <strong>JSON</strong>.</li>
+          <li>When Instagram emails you, download the ZIP and drop it above. No login needed here.</li>
+        </ol>
+      </details>
+    </section>
+
+    <div id="messages" class="messages" aria-live="polite"></div>
+
+    <!-- Results -->
+    <section id="results" hidden>
+      <div class="stats" id="stats">
+        <button class="stat" data-tab="followers" type="button"><span class="stat-value" id="stat-followers">0</span><span class="stat-label">Followers</span></button>
+        <button class="stat" data-tab="following" type="button"><span class="stat-value" id="stat-following">0</span><span class="stat-label">Following</span></button>
+        <button class="stat accent" data-tab="notFollowingBack" type="button"><span class="stat-value" id="stat-nfb">0</span><span class="stat-label">Not following you back</span></button>
+        <button class="stat" data-tab="mutual" type="button"><span class="stat-value" id="stat-mutual">0</span><span class="stat-label">Mutual</span></button>
+        <button class="stat" data-tab="fans" type="button"><span class="stat-value" id="stat-fans">0</span><span class="stat-label">You don't follow back</span></button>
+      </div>
+      <p id="sources" class="sources"></p>
+
+      <div class="card list-card">
+        <div class="toolbar">
+          <div class="tabs" role="tablist" id="tabs">
+            <button role="tab" type="button" data-tab="notFollowingBack">Not following back <span class="count" data-count="notFollowingBack"></span></button>
+            <button role="tab" type="button" data-tab="fans">You don't follow back <span class="count" data-count="fans"></span></button>
+            <button role="tab" type="button" data-tab="mutual">Mutual <span class="count" data-count="mutual"></span></button>
+            <button role="tab" type="button" data-tab="following">Following <span class="count" data-count="following"></span></button>
+            <button role="tab" type="button" data-tab="followers">Followers <span class="count" data-count="followers"></span></button>
+          </div>
+          <div class="controls">
+            <label class="search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <input id="search" type="search" placeholder="Search usernames  ( / )" autocomplete="off" spellcheck="false" aria-label="Search usernames">
+            </label>
+            <select id="sort" aria-label="Sort">
+              <option value="az">A &rarr; Z</option>
+              <option value="za">Z &rarr; A</option>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+          </div>
+        </div>
+        <p id="list-summary" class="list-summary"></p>
+        <ul id="list" class="list"></ul>
+        <button id="more" class="btn more" type="button" hidden>Show more</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">Your data never leaves this browser tab. Close the tab to forget it.</footer>
+
+  <script src="vendor/jszip.min.js"></script>
+  <script src="parser.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
