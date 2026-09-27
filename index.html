@@ -83,6 +83,14 @@
         </div>
       </aside>
 
+      <div class="card review-launch" id="review-launch">
+        <div class="review-launch-text">
+          <strong>Review Mode</strong>
+          <span id="review-launch-status"></span>
+        </div>
+        <button id="review-start" class="btn primary" type="button">Start review</button>
+      </div>
+
       <div class="card list-card">
         <div class="toolbar">
           <div class="tabs" role="tablist" id="tabs">
@@ -118,6 +126,69 @@
         <button id="more" class="btn more" type="button" hidden>Show more</button>
       </div>
     </section>
+
+    <!-- Review Mode: one unreviewed account at a time -->
+    <section id="review" class="review" hidden aria-label="Review mode">
+      <div class="review-top">
+        <h2>Review Mode</h2>
+        <button id="rv-exit" class="btn ghost" type="button">Exit review <kbd>Esc</kbd></button>
+      </div>
+
+      <div class="card rv-progress">
+        <div class="rv-progress-head">
+          <strong id="rv-progress-text"></strong>
+          <span id="rv-percent"></span>
+        </div>
+        <div class="progress-bar" id="rv-bar" role="progressbar" aria-label="Accounts reviewed" aria-valuemin="0">
+          <span class="seg keep" id="rv-seg-keep"></span><span class="seg ignore" id="rv-seg-ignore"></span><span class="seg unavailable" id="rv-seg-unavailable"></span>
+        </div>
+        <dl class="rv-stats">
+          <div><dt>Total</dt><dd id="rv-total"></dd></div>
+          <div><dt>Reviewed</dt><dd id="rv-reviewed"></dd></div>
+          <div><dt>Remaining</dt><dd id="rv-remaining"></dd></div>
+          <div><dt><span class="dot keep"></span>Keep</dt><dd id="rv-keep"></dd></div>
+          <div><dt><span class="dot ignore"></span>Ignore</dt><dd id="rv-ignore"></dd></div>
+          <div><dt><span class="dot unavailable"></span>Unavailable</dt><dd id="rv-unavailable"></dd></div>
+        </dl>
+      </div>
+
+      <div class="card rv-card" id="rv-card" tabindex="-1">
+        <div id="rv-account">
+          <p class="rv-position" id="rv-position"></p>
+          <span class="avatar rv-avatar" id="rv-avatar" aria-hidden="true"></span>
+          <h3 class="rv-username" id="rv-username"></h3>
+          <p class="rv-date" id="rv-date"></p>
+          <p class="rv-current-tag" id="rv-current-tag" hidden></p>
+          <a id="rv-open" class="btn rv-open" target="_blank" rel="noopener noreferrer">Open Instagram profile &#8599; <kbd>O</kbd></a>
+          <div class="rv-choices" role="group" aria-label="Tag this account">
+            <button type="button" class="rv-choice keep" data-review-tag="keep">Keep <kbd>K</kbd></button>
+            <button type="button" class="rv-choice ignore" data-review-tag="ignore">Ignore <kbd>I</kbd></button>
+            <button type="button" class="rv-choice unavailable" data-review-tag="unavailable">Unavailable <kbd>U</kbd></button>
+          </div>
+        </div>
+        <div id="rv-done" class="rv-done" hidden>
+          <h3>All caught up</h3>
+          <p id="rv-done-text"></p>
+          <div class="rv-done-actions">
+            <button id="rv-review-skipped" class="btn primary" type="button"></button>
+            <button id="rv-done-exit" class="btn" type="button">Back to the list</button>
+          </div>
+        </div>
+        <div class="rv-nav">
+          <button id="rv-prev" class="btn" type="button">&larr; Previous</button>
+          <button id="rv-skip" class="btn" type="button">Skip <kbd>S</kbd></button>
+          <button id="rv-undo" class="btn" type="button">Undo <kbd>Z</kbd></button>
+        </div>
+      </div>
+
+      <p class="rv-shortcuts" id="rv-shortcuts">
+        <strong>Shortcuts</strong>
+        <span><kbd>K</kbd> Keep</span><span><kbd>I</kbd> Ignore</span><span><kbd>U</kbd> Unavailable</span>
+        <span><kbd>S</kbd> Skip</span><span><kbd>&larr;</kbd> Previous</span><span><kbd>Z</kbd> Undo</span>
+        <span><kbd>Enter</kbd> / <kbd>O</kbd> Open profile</span><span><kbd>Esc</kbd> Exit</span>
+      </p>
+      <p class="rv-note">Opening a profile is a normal link to instagram.com in a new tab. The app never checks accounts itself.</p>
+    </section>
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden>
@@ -131,6 +202,7 @@
   <script src="vendor/jszip.min.js"></script>
   <script src="parser.js"></script>
   <script src="tags.js"></script>
+  <script src="review.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

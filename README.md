@@ -33,6 +33,26 @@ Tags belong to the browser *and* to how you open the app: `file://` and
 `http://localhost:8000` keep separate tags, so pick one way and stick to it.
 Clearing site data for the page deletes the tags.
 
+## Review Mode
+Press **Start review** (or **Resume review**) above the list to go through the
+unreviewed "Not following back" accounts one at a time, A to Z. Each choice moves
+straight to the next unreviewed account. Accounts that already have a tag are left
+out; change those in the list, or reach them with Previous.
+
+| Key | Action |
+|---|---|
+| `K` / `I` / `U` | Keep / Ignore / Unavailable |
+| `S` | Skip (stays unreviewed; you're offered the skipped ones at the end) |
+| `←` | Previous account (tagged or not) |
+| `Z` or `Ctrl/Cmd+Z` | Undo the last action |
+| `Enter` / `O` | Open the Instagram profile in a new tab |
+| `Esc` | Exit Review Mode |
+
+"Open Instagram profile" is a normal link to `https://www.instagram.com/USERNAME/`.
+The app never checks profiles itself. Your place in the review and the skipped list
+are saved in `localStorage` next to the tags, so after closing the browser you
+upload the ZIP again and press **Resume review**.
+
 ## Counts vs. your live profile
 Results come from the export, so they can differ slightly from the numbers on
 your Instagram profile (deactivated/suspended/deleted accounts, or activity after
@@ -46,12 +66,14 @@ in the data.
 - `parser.js`: parsing and comparing the export (no DOM, unit tested). Supports the
   classic `string_list_data` layout and the newer `label_values` layout.
 - `tags.js`: Keep / Ignore / Unavailable tags saved in `localStorage` (unit tested)
+- `review.js`: Review Mode queue, skip, previous, undo and resume position (unit tested)
 - `vendor/jszip.min.js`: JSZip 3.10.2 for reading the ZIP in the browser (MIT or GPLv3)
 
 ## Status
 - [x] Step 1: parser (`parser.js`) + tests
 - [x] Step 2: upload page, totals, list, search
 - [x] Step 3: Keep / Ignore / Unavailable tags saved locally, with filters
+- [x] Step 4: Review Mode (one account at a time, shortcuts, progress, resume)
 
 ## Tests
     node --test instagram/tests/*.test.js

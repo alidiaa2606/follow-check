@@ -384,3 +384,281 @@ test('data note explains export vs live counts and shows the data date', async (
   assert.equal(await page.textContent('#data-date'), 'Newest activity in the data: Nov 14, 2023.');
   await page.close();
 });
+
+// ---------- Step 4: Review Mode ----------
+
+const rvUser = (page) => page.textContent('#rv-username');
+const rvProgress = (page) => page.evaluate(() => Object.fromEntries(
+  ['total', 'reviewed', 'remaining', 'keep', 'ignore', 'unavailable'].map((k) => [k, Number(document.getElementById(`rv-${k}`).textContent)])));
+
+/** Never hit the real Instagram in tests: answer profile URLs with a local stub page. */
+async function stubInstagram(context) {
+  await context.route('https://www.instagram.com/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '<p>stub profile</p>' }));
+}
+/** Run `action` and return the URL of the tab it opens. */
+async function openedUrl(page, action) {
+  const [popup] = await Promise.all([page.context().waitForEvent('page'), action()]);
+  const url = popup.url() === 'about:blank' ? (await popup.waitForURL(/instagram/), popup.url()) : popup.url();
+  await popup.close();
+  return url;
+}
+
+test('review mode: start, tag with buttons, auto-advance, progress, finish', async () => {
+  const { page, problems } = await openApp();
+  await upload(page, zipPath);
+  assert.equal(await page.textContent('#review-start'), 'Start review');
+  assert.match(await page.textContent('#review-launch-status'), /3 unreviewed accounts one at a time\. 0 \/ 3 reviewed/);
+
+  await page.click('#review-start');
+  assert.equal(await page.isVisible('#review'), true);
+  assert.equal(await page.isHidden('#results'), true);
+  assert.equal(await rvUser(page), '@href.only');
+  assert.equal(await page.textContent('#rv-position'), 'Account 1 of 3');
+  assert.equal(await page.textContent('#rv-date'), 'You followed on Jul 22, 2023');
+  assert.equal(await page.textContent('#rv-progress-text'), '0 / 3 reviewed');
+  assert.deepEqual(await rvProgress(page), { total: 3, reviewed: 0, remaining: 3, keep: 0, ignore: 0, unavailable: 0 });
+
+  await page.click('[data-review-tag=keep]');
+  assert.equal(await rvUser(page), '@natgeo'); // moved on automatically
+  assert.equal(await page.textContent('#rv-progress-text'), '1 / 3 reviewed');
+  assert.equal(await page.textContent('#rv-percent'), '33%');
+  assert.match(await page.getAttribute('#rv-seg-keep', 'style'), /width: 33\.33/);
+  assert.equal(await page.getAttribute('#rv-bar', 'aria-valuenow'), '1');
+
+  await page.click('[data-review-tag=ignore]');
+  assert.equal(await rvUser(page), '@old_friend');
+  await page.click('[data-review-tag=unavailable]');
+  assert.equal(await page.isVisible('#rv-done'), true);
+  assert.match(await page.textContent('#rv-done-text'), /Every account in “Not following back” has a tag/);
+  assert.equal(await page.isHidden('#rv-review-skipped'), true);
+  assert.deepEqual(await rvProgress(page), { total: 3, reviewed: 3, remaining: 0, keep: 1, ignore: 1, unavailable: 1 });
+  assert.equal(await page.textContent('#rv-percent'), '100%');
+
+  // Back to the Step 3 list: same tags, same counts.
+  await page.click('#rv-done-exit');
+  assert.equal(await page.isVisible('#results'), true);
+  assert.equal(await tagOf(page, 'href.only'), 'keep');
+  assert.equal(await tagOf(page, 'natgeo'), 'ignore');
+  assert.equal(await tagOf(page, 'old_friend'), 'unavailable');
+  assert.deepEqual(await filterCounts(page), { all: 3, unreviewed: 0, keep: 1, ignore: 1, unavailable: 1 });
+  assert.equal(await page.textContent('#stat-reviewed'), '3');
+  assert.equal(await page.textContent('#review-start'), 'Open review');
+  assert.deepEqual(problems, []);
+  await page.close();
+});
+
+test('review mode: skip, previous, undo, and reviewing skipped accounts', async () => {
+  const { page } = await openApp();
+  await upload(page, zipPath);
+  await page.click('#review-start');
+  assert.equal(await page.isDisabled('#rv-prev'), true);
+  assert.equal(await page.isDisabled('#rv-undo'), true);
+
+  await page.click('#rv-skip');
+  assert.equal(await rvUser(page), '@natgeo');
+  assert.equal((await rvProgress(page)).reviewed, 0); // skip doesn't tag
+
+  await page.click('#rv-prev');
+  assert.equal(await rvUser(page), '@href.only');
+  assert.equal(await page.isDisabled('#rv-prev'), true);
+  await page.click('[data-review-tag=keep]');
+  assert.equal(await rvUser(page), '@natgeo');
+
+  // Previous onto a tagged account shows its tag and allows changing it.
+  await page.click('#rv-prev');
+  assert.equal(await rvUser(page), '@href.only');
+  assert.match(await page.textContent('#rv-current-tag'), /Currently tagged Keep/);
+  assert.equal(await page.getAttribute('[data-review-tag=keep]', 'aria-pressed'), 'true');
+  await page.click('[data-review-tag=ignore]');
+  assert.equal(await rvUser(page), '@natgeo');
+  assert.deepEqual(await rvProgress(page), { total: 3, reviewed: 1, remaining: 2, keep: 0, ignore: 1, unavailable: 0 });
+
+  // Undo, step by step.
+  await page.click('#rv-skip'); // natgeo -> old_friend
+  assert.equal(await rvUser(page), '@old_friend');
+  await page.click('#rv-undo'); // undo skip
+  assert.equal(await rvUser(page), '@natgeo');
+  await page.click('#rv-undo'); // undo keep -> ignore change
+  assert.equal(await rvUser(page), '@href.only');
+  assert.match(await page.textContent('#rv-current-tag'), /Currently tagged Keep/);
+  await page.click('#rv-undo'); // undo the first keep
+  assert.equal(await page.isHidden('#rv-current-tag'), true);
+  assert.equal((await rvProgress(page)).reviewed, 0);
+  assert.equal(await page.isDisabled('#rv-undo'), false); // the very first Skip is still undoable
+  await page.click('#rv-undo');
+  assert.equal(await rvUser(page), '@href.only');
+  assert.equal(await page.isDisabled('#rv-undo'), true);
+
+  // Skip everything, then review the skipped ones.
+  await page.click('#rv-skip');
+  await page.click('#rv-skip');
+  await page.click('#rv-skip');
+  assert.equal(await page.isVisible('#rv-done'), true);
+  assert.match(await page.textContent('#rv-done-text'), /except the 3 you skipped/);
+  assert.equal(await page.textContent('#rv-review-skipped'), 'Review 3 skipped accounts');
+  await page.click('#rv-review-skipped');
+  assert.equal(await rvUser(page), '@href.only');
+  await page.close();
+});
+
+test('review mode: keyboard shortcuts', async () => {
+  const { page, problems } = await openApp();
+  await stubInstagram(page.context());
+  await upload(page, zipPath);
+  await page.click('#review-start');
+  assert.equal(await page.isVisible('#rv-shortcuts'), true);
+  assert.match(await page.textContent('#rv-shortcuts'), /K\s*Keep.*I\s*Ignore.*U\s*Unavailable.*S\s*Skip.*Previous.*Z\s*Undo.*Enter\s*\/\s*O\s*Open profile.*Esc\s*Exit/s);
+
+  await page.keyboard.press('k');
+  assert.equal(await rvUser(page), '@natgeo');
+  await page.keyboard.press('i');
+  assert.equal(await rvUser(page), '@old_friend');
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await rvUser(page), '@natgeo');
+  await page.keyboard.press('u'); // change natgeo: ignore -> unavailable
+  assert.equal(await rvUser(page), '@old_friend');
+  await page.keyboard.press('s');
+  assert.equal(await page.isVisible('#rv-done'), true);
+  await page.keyboard.press('z'); // undo skip
+  assert.equal(await rvUser(page), '@old_friend');
+  await page.keyboard.press('Control+z'); // undo natgeo change
+  assert.equal(await rvUser(page), '@natgeo');
+  assert.match(await page.textContent('#rv-current-tag'), /Currently tagged Ignore/);
+  await page.keyboard.press('Shift+K'); // capital letters work too: natgeo ignore -> keep
+  assert.equal(await rvUser(page), '@old_friend');
+  assert.deepEqual(await rvProgress(page), { total: 3, reviewed: 2, remaining: 1, keep: 2, ignore: 0, unavailable: 0 });
+
+  assert.equal(await openedUrl(page, () => page.keyboard.press('o')), 'https://www.instagram.com/old_friend/');
+  assert.equal(await openedUrl(page, () => page.keyboard.press('Enter')), 'https://www.instagram.com/old_friend/');
+  assert.equal(await rvUser(page), '@old_friend'); // opening doesn't tag or move
+
+  // After a mouse click on a tag button, Enter opens the next profile (not a second tag).
+  await page.click('[data-review-tag=unavailable]');
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await rvUser(page), '@old_friend');
+  await page.click('#rv-skip'); // focus returns to the card
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await openedUrl(page, () => page.keyboard.press('Enter')), 'https://www.instagram.com/old_friend/');
+
+  await page.keyboard.press('Escape');
+  assert.equal(await page.isVisible('#results'), true);
+  assert.deepEqual(await filterCounts(page), { all: 3, unreviewed: 0, keep: 2, ignore: 0, unavailable: 1 });
+  assert.equal(await tagOf(page, 'old_friend'), 'unavailable');
+  // Review shortcuts are off in the list view: typing k in search just types.
+  await page.click('#search');
+  await page.keyboard.type('k');
+  assert.equal(await page.inputValue('#search'), 'k');
+  assert.deepEqual(problems, []);
+  await page.close();
+});
+
+test('review mode: "Open Instagram profile" is a plain link to the right URL in a new tab', async () => {
+  const { page } = await openApp();
+  await stubInstagram(page.context());
+  await upload(page, zipPath);
+  await page.click('#review-start');
+  assert.equal(await page.getAttribute('#rv-open', 'href'), 'https://www.instagram.com/href.only/');
+  assert.equal(await page.getAttribute('#rv-open', 'target'), '_blank');
+  assert.match(await page.getAttribute('#rv-open', 'rel'), /noopener/);
+  assert.equal(await openedUrl(page, () => page.click('#rv-open')), 'https://www.instagram.com/href.only/');
+  await page.click('[data-review-tag=keep]');
+  assert.equal(await page.getAttribute('#rv-open', 'href'), 'https://www.instagram.com/natgeo/');
+  await page.close();
+});
+
+test('review mode: accounts tagged in the list view are not in the review queue', async () => {
+  const { page } = await openApp();
+  await upload(page, zipPath);
+  await clickTag(page, 'natgeo', 'keep');
+  await page.click('#review-start');
+  assert.equal(await rvUser(page), '@href.only');
+  await page.click('[data-review-tag=ignore]');
+  assert.equal(await rvUser(page), '@old_friend'); // natgeo skipped over
+  assert.equal((await rvProgress(page)).reviewed, 2);
+  await page.close();
+});
+
+test('review mode: resume after exiting, after reloading, and after restarting the browser', async () => {
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'ig-review-'));
+  const launch = () => chromium.launchPersistentContext(profile, { executablePath: EXECUTABLE, locale: 'en-US', timezoneId: 'UTC' });
+  const open = async (context) => {
+    const page = await context.newPage();
+    await page.goto(APP_URL);
+    await upload(page, zipPath);
+    return page;
+  };
+
+  let context = await launch();
+  let page = await open(context);
+  await page.click('#review-start');
+  await page.keyboard.press('k'); // href.only
+  await page.keyboard.press('s'); // skip natgeo
+  assert.equal(await rvUser(page), '@old_friend');
+
+  // Leave and come back.
+  await page.click('#rv-exit');
+  assert.equal(await page.textContent('#review-start'), 'Resume review');
+  await page.click('#review-start');
+  assert.equal(await rvUser(page), '@old_friend');
+
+  // Reload the page.
+  await page.reload();
+  await upload(page, zipPath);
+  assert.equal(await page.textContent('#review-start'), 'Resume review');
+  await page.click('#review-start');
+  assert.equal(await rvUser(page), '@old_friend');
+  await context.close();
+
+  // Quit and restart the browser.
+  context = await launch();
+  page = await open(context);
+  assert.equal(await page.textContent('#review-start'), 'Resume review');
+  assert.match(await page.textContent('#review-launch-status'), /1 \/ 3 reviewed/);
+  await page.click('#review-start');
+  assert.equal(await rvUser(page), '@old_friend');
+  await page.keyboard.press('u');
+  assert.match(await page.textContent('#rv-done-text'), /except the 1 you skipped/); // natgeo still skipped
+  assert.deepEqual(await rvProgress(page), { total: 3, reviewed: 2, remaining: 1, keep: 1, ignore: 0, unavailable: 1 });
+  await context.close();
+});
+
+test('review mode: newer export keeps review progress by username', async () => {
+  const { page } = await openApp();
+  await upload(page, zipPath);
+  await page.click('#review-start');
+  await page.keyboard.press('i'); // href.only ignored
+  await page.keyboard.press('Escape');
+  await page.click('#reset');
+  await upload(page, zip2Path); // NFB: brand_new, href.only
+  assert.equal(await page.textContent('#review-start'), 'Resume review');
+  await page.click('#review-start');
+  assert.equal(await rvUser(page), '@brand_new');
+  assert.deepEqual(await rvProgress(page), { total: 2, reviewed: 1, remaining: 1, keep: 0, ignore: 1, unavailable: 0 });
+  await page.close();
+});
+
+test('review mode on mobile and in dark mode', async () => {
+  for (const colorScheme of ['light', 'dark']) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, colorScheme, locale: 'en-US', timezoneId: 'UTC' });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(APP_URL);
+    await upload(page, zipPath);
+    await page.tap('#review-start');
+    assert.equal(await rvUser(page), '@href.only');
+    await page.tap('[data-review-tag=keep]');
+    assert.equal(await rvUser(page), '@natgeo');
+    await page.tap('#rv-undo');
+    assert.equal(await rvUser(page), '@href.only');
+    const layout = await page.evaluate(() => ({
+      overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      shortcutsShown: getComputedStyle(document.getElementById('rv-shortcuts')).display !== 'none',
+      buttons: [...document.querySelectorAll('.rv-choice')].map((b) => b.getBoundingClientRect()).every((r) => r.right <= innerWidth && r.height >= 44),
+    }));
+    assert.deepEqual(layout, { overflow: false, shortcutsShown: false, buttons: true }, colorScheme);
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+});

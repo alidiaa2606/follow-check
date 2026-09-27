@@ -33,6 +33,8 @@
     // Storage blocked (e.g. some privacy modes): tags work for this session only.
   }
   const tags = IGTags.createTagStore(storage);
+  let review = null; // Review Mode session for the current export (review.js)
+  let reviewedThisVisit = false; // switches the button label to "Resume review"
 
   const state = {
     lists: null, // { notFollowingBack, fans, mutual, following, followers }
@@ -176,6 +178,11 @@
     $('reset').hidden = false;
     state.query = '';
     $('search').value = '';
+    review = IGReview.createReviewSession({
+      order: notFollowingBack.map((e) => e.username),
+      tags,
+      storage,
+    });
     updateTagCounts();
     setTab('notFollowingBack');
   }
@@ -189,6 +196,7 @@
       el.textContent = fmt(c[el.dataset.filterCount]);
     }
     $('storage-warning').hidden = tags.isPersistent();
+    updateReviewLaunch();
   }
 
   function setTab(tab) {
@@ -353,6 +361,117 @@
     return [name.slice(0, i), mark, name.slice(i + q.length)];
   }
 
+  // ---------- Review Mode ----------
+
+  const inReview = () => !$('review').hidden;
+  const entryByName = (username) => state.lists.notFollowingBack.find((e) => e.username === username);
+
+  function updateReviewLaunch() {
+    if (!review) return;
+    const p = review.progress();
+    $('review-launch').hidden = p.total === 0;
+    const resumable = p.remaining > 0 && (review.hasSavedProgress || reviewedThisVisit);
+    $('review-start').textContent = p.remaining === 0 ? 'Open review' : resumable ? 'Resume review' : 'Start review';
+    $('review-launch-status').textContent = p.remaining === 0
+      ? `All ${fmt(p.total)} accounts reviewed.`
+      : `Go through the ${fmt(p.remaining)} unreviewed account${p.remaining === 1 ? '' : 's'} one at a time. ${fmt(p.reviewed)} / ${fmt(p.total)} reviewed so far.`;
+  }
+
+  function enterReview() {
+    if (!review) return;
+    reviewedThisVisit = true;
+    review.start();
+    hideToast();
+    $('results').hidden = true;
+    $('review').hidden = false;
+    window.scrollTo(0, 0);
+    renderReview();
+  }
+
+  function exitReview() {
+    $('review').hidden = true;
+    $('results').hidden = false;
+    updateTagCounts();
+    render();
+  }
+
+  function renderReview() {
+    const p = review.progress();
+    const pct = (n) => (p.total ? (n / p.total) * 100 : 0);
+    $('rv-progress-text').textContent = `${fmt(p.reviewed)} / ${fmt(p.total)} reviewed`;
+    $('rv-percent').textContent = `${Math.floor(pct(p.reviewed))}%`;
+    $('rv-bar').setAttribute('aria-valuemax', String(p.total));
+    $('rv-bar').setAttribute('aria-valuenow', String(p.reviewed));
+    for (const t of IGTags.TAGS) {
+      $(`rv-seg-${t}`).style.width = `${pct(p[t])}%`;
+      $(`rv-${t}`).textContent = fmt(p[t]);
+    }
+    $('rv-total').textContent = fmt(p.total);
+    $('rv-reviewed').textContent = fmt(p.reviewed);
+    $('rv-remaining').textContent = fmt(p.remaining);
+
+    const username = review.current();
+    $('rv-account').hidden = username === null;
+    $('rv-done').hidden = username !== null;
+    $('rv-skip').disabled = username === null;
+    $('rv-prev').disabled = !review.canPrevious();
+    $('rv-undo').disabled = !review.canUndo();
+
+    if (username === null) {
+      const skipped = review.skippedCount();
+      $('rv-done-text').textContent = skipped
+        ? `You've been through every account except the ${fmt(skipped)} you skipped.`
+        : `Every account in “Not following back” has a tag. You can still change tags in the list.`;
+      $('rv-review-skipped').hidden = !skipped;
+      $('rv-review-skipped').textContent = `Review ${fmt(skipped)} skipped account${skipped === 1 ? '' : 's'}`;
+      return;
+    }
+
+    const entry = entryByName(username);
+    const tag = tags.get(username);
+    $('rv-position').textContent = `Account ${fmt(review.position())} of ${fmt(p.total)}`;
+    $('rv-avatar').textContent = username.replace(/[^a-z0-9]/g, '').charAt(0).toUpperCase() || '@';
+    $('rv-avatar').style.setProperty('--hue', hue(username));
+    $('rv-username').textContent = `@${username}`;
+    $('rv-date').textContent = entry && entry.timestamp ? `You followed on ${formatDate(entry.timestamp)}` : 'Follow date not in the export';
+    $('rv-current-tag').hidden = !tag;
+    $('rv-current-tag').textContent = tag ? `Currently tagged ${TAG_LABELS[tag]}. Pick a tag to change it, or Skip to leave it.` : '';
+    $('rv-open').href = `https://www.instagram.com/${encodeURIComponent(username)}/`;
+    for (const b of document.querySelectorAll('[data-review-tag]')) {
+      b.setAttribute('aria-pressed', String(b.dataset.reviewTag === tag));
+    }
+  }
+
+  /** Run a review step, then redraw and put focus on the card so shortcuts (incl. Enter) keep working. */
+  function reviewStep(fn) {
+    fn();
+    renderReview();
+    $('rv-card').focus({ preventScroll: true });
+  }
+
+  function onReviewKey(e) {
+    const el = e.target;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) return;
+    const key = e.key.toLowerCase();
+    if (e.altKey || ((e.ctrlKey || e.metaKey) && key !== 'z')) return;
+    const onControl = el && (el.tagName === 'BUTTON' || el.tagName === 'A');
+    const hasAccount = review.current() !== null;
+    const actions = {
+      k: () => hasAccount && reviewStep(() => review.tag('keep')),
+      i: () => hasAccount && reviewStep(() => review.tag('ignore')),
+      u: () => hasAccount && reviewStep(() => review.tag('unavailable')),
+      s: () => hasAccount && reviewStep(() => review.skip()),
+      arrowleft: () => reviewStep(() => review.previous()),
+      z: () => reviewStep(() => review.undo()),
+      o: () => hasAccount && $('rv-open').click(),
+      enter: () => hasAccount && $('rv-open').click(),
+      escape: () => exitReview(),
+    };
+    if (!actions[key] || (key === 'enter' && onControl)) return; // Enter on a button presses that button
+    e.preventDefault();
+    actions[key]();
+  }
+
   // ---------- Toast with undo ----------
 
   let toastTimer = null;
@@ -407,6 +526,8 @@
     state.lists = null;
     $('list').replaceChildren();
     $('results').hidden = true;
+    $('review').hidden = true;
+    review = null;
     $('reset').hidden = true;
     $('upload').hidden = false;
     $('file-input').value = '';
@@ -466,6 +587,7 @@
     tags.reload();
     updateTagCounts();
     render();
+    if (inReview()) renderReview();
   });
 
   $('search').addEventListener('input', (e) => {
@@ -477,6 +599,7 @@
     if (e.key === 'Escape') { e.target.value = ''; state.query = ''; render(); }
   });
   document.addEventListener('keydown', (e) => {
+    if (inReview()) return onReviewKey(e);
     if (e.key === '/' && state.lists && document.activeElement !== $('search')) {
       e.preventDefault();
       $('search').focus();
@@ -492,4 +615,15 @@
     render();
   });
   $('reset').addEventListener('click', reset);
+
+  $('review-start').addEventListener('click', enterReview);
+  $('rv-exit').addEventListener('click', exitReview);
+  $('rv-done-exit').addEventListener('click', exitReview);
+  for (const b of document.querySelectorAll('[data-review-tag]')) {
+    b.addEventListener('click', () => reviewStep(() => review.tag(b.dataset.reviewTag)));
+  }
+  $('rv-skip').addEventListener('click', () => reviewStep(() => review.skip()));
+  $('rv-prev').addEventListener('click', () => reviewStep(() => review.previous()));
+  $('rv-undo').addEventListener('click', () => reviewStep(() => review.undo()));
+  $('rv-review-skipped').addEventListener('click', () => reviewStep(() => review.reviewSkipped()));
 })();
