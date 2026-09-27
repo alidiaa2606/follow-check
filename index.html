@@ -21,7 +21,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/></svg>
       Runs locally &middot; nothing is uploaded
     </span>
-    <button id="reset" class="btn ghost" type="button" hidden>Start over</button>
+    <div class="topbar-actions">
+      <button id="open-settings" class="btn ghost" type="button">Backup &amp; data</button>
+      <button id="reset" class="btn ghost" type="button" hidden>Load another export</button>
+    </div>
   </header>
 
   <main>
@@ -66,11 +69,50 @@
         <button class="stat accent" data-tab="notFollowingBack" type="button"><span class="stat-value" id="stat-nfb">0</span><span class="stat-label">Not following you back</span></button>
         <button class="stat" data-tab="mutual" type="button"><span class="stat-value" id="stat-mutual">0</span><span class="stat-label">Mutual</span></button>
         <button class="stat" data-tab="fans" type="button"><span class="stat-value" id="stat-fans">0</span><span class="stat-label">You don't follow back</span></button>
-        <button class="stat reviewed" id="stat-reviewed-card" type="button" title="Accounts you've tagged in “Not following back”">
-          <span class="stat-value" id="stat-reviewed">0</span>
-          <span class="stat-label">Reviewed</span>
-          <span class="stat-breakdown" id="stat-breakdown"></span>
-        </button>
+      </div>
+
+      <div class="dash-panels">
+        <section class="card dash-panel" aria-labelledby="dash-review-title">
+          <div class="dash-head">
+            <h2 id="dash-review-title">Review <span class="dash-sub">· Not following back</span></h2>
+          </div>
+          <div class="dash-tiles review-tiles">
+            <button class="tile" id="stat-reviewed-card" type="button" title="Show “Not following back”, reviewed accounts first">
+              <span class="tile-value" id="stat-reviewed">0</span><span class="tile-label">Reviewed</span></button>
+            <button class="tile" type="button" data-nav-filter="unreviewed">
+              <span class="tile-value" id="stat-unreviewed">0</span><span class="tile-label">Unreviewed</span></button>
+            <button class="tile" type="button" data-nav-filter="keep">
+              <span class="tile-value" id="stat-keep">0</span><span class="tile-label"><span class="dot keep"></span>Keep</span></button>
+            <button class="tile" type="button" data-nav-filter="ignore">
+              <span class="tile-value" id="stat-ignore">0</span><span class="tile-label"><span class="dot ignore"></span>Ignore</span></button>
+            <button class="tile" type="button" data-nav-filter="unavailable">
+              <span class="tile-value" id="stat-unavailable">0</span><span class="tile-label"><span class="dot unavailable"></span>Unavailable</span></button>
+          </div>
+          <div class="dash-action" id="review-launch">
+            <span id="review-launch-status"></span>
+            <button id="review-start" class="btn primary small" type="button">Start review</button>
+          </div>
+        </section>
+
+        <section class="card dash-panel" aria-labelledby="dash-cleanup-title">
+          <div class="dash-head">
+            <h2 id="dash-cleanup-title">Cleanup <span class="dash-sub">· Unfollow Queue</span></h2>
+          </div>
+          <div class="dash-tiles cleanup-tiles">
+            <button class="tile" type="button" data-qnav="all">
+              <span class="tile-value" id="stat-queue">0</span><span class="tile-label">Unfollow Queue</span></button>
+            <button class="tile" type="button" data-qnav="done">
+              <span class="tile-value" id="stat-queue-done">0</span><span class="tile-label"><span class="dot keep"></span>Completed</span></button>
+            <button class="tile" type="button" data-qnav="pending">
+              <span class="tile-value" id="stat-queue-remaining">0</span><span class="tile-label">Remaining</span></button>
+            <button class="tile" type="button" data-qnav="skipped">
+              <span class="tile-value" id="stat-queue-skipped">0</span><span class="tile-label"><span class="dot ignore"></span>Skipped</span></button>
+          </div>
+          <div class="dash-action" id="queue-launch">
+            <span id="queue-launch-status"></span>
+            <button id="queue-open" class="btn primary small" type="button">Open Unfollow Queue</button>
+          </div>
+        </section>
       </div>
 
       <aside class="data-note" id="data-note">
@@ -83,15 +125,7 @@
         </div>
       </aside>
 
-      <div class="card review-launch" id="review-launch">
-        <div class="review-launch-text">
-          <strong>Review Mode</strong>
-          <span id="review-launch-status"></span>
-        </div>
-        <button id="review-start" class="btn primary" type="button">Start review</button>
-      </div>
-
-      <div class="card list-card">
+      <div class="card list-card" id="list-card">
         <div class="toolbar">
           <div class="tabs" role="tablist" id="tabs">
             <button role="tab" type="button" data-tab="notFollowingBack">Not following back <span class="count" data-count="notFollowingBack"></span></button>
@@ -133,6 +167,10 @@
             <button class="btn small bulk ignore" type="button" data-bulk="ignore">Mark Ignore</button>
             <button class="btn small bulk unavailable" type="button" data-bulk="unavailable">Mark Unavailable</button>
             <button class="btn small bulk" type="button" data-bulk="clear">Clear tags</button>
+          </div>
+          <div class="bulk-actions queue-actions" role="group" aria-label="Unfollow Queue actions for selected accounts">
+            <button class="btn small bulk queue-add" type="button" data-queue-bulk="add">Add to Unfollow Queue</button>
+            <button class="btn small bulk" type="button" data-queue-bulk="remove">Remove from Unfollow Queue</button>
           </div>
           <p class="bulk-note" id="bulk-note" hidden></p>
         </div>
@@ -205,13 +243,200 @@
       </p>
       <p class="rv-note">Opening a profile is a normal link to instagram.com in a new tab. The app never checks accounts itself.</p>
     </section>
+
+    <!-- Backup & data: local backup file, restore, and clearing saved Follow Check data -->
+    <section id="settings" class="review settings" hidden aria-labelledby="settings-title">
+      <div class="review-top">
+        <h2 id="settings-title">Backup &amp; data</h2>
+        <button id="settings-back" class="btn ghost" type="button">Back <kbd>Esc</kbd></button>
+      </div>
+      <p id="settings-status" class="settings-status" role="status" aria-live="polite" hidden></p>
+
+      <div class="card settings-card">
+        <h3>Backup</h3>
+        <p>Save your Follow Check work to a file on this device: tags, Review Mode progress, the Unfollow Queue and your
+          session target. Restore it later, or in another browser. The backup contains the usernames you tagged or
+          queued, but none of your Instagram export. It is never uploaded, so keep the file somewhere private.</p>
+        <div class="settings-actions">
+          <button id="backup-export" class="btn primary" type="button">Export Follow Check Backup</button>
+          <label class="btn" id="backup-import-label">Import Follow Check Backup
+            <input id="backup-import" type="file" accept=".json,application/json" hidden>
+          </label>
+        </div>
+        <p id="backup-error" class="settings-error" role="alert" hidden></p>
+      </div>
+
+      <div class="card settings-card">
+        <h3>Saved data in this browser</h3>
+        <p id="saved-summary" class="saved-summary"></p>
+        <ul class="reset-list">
+          <li>
+            <div><strong>Clear review progress</strong>
+              <span>Deletes every Keep / Ignore / Unavailable tag and your Review Mode position. The Unfollow Queue is not changed.</span></div>
+            <button class="btn small" type="button" data-reset="review">Clear review progress</button>
+          </li>
+          <li>
+            <div><strong>Clear Unfollow Queue progress</strong>
+              <span>Puts every queued account back to Remaining (clears Done and Skipped) and forgets your place. The accounts stay in the queue.</span></div>
+            <button class="btn small" type="button" data-reset="queue-progress">Clear queue progress</button>
+          </li>
+          <li>
+            <div><strong>Clear Unfollow Queue</strong>
+              <span>Removes every account from the Unfollow Queue, with its progress. Tags are not changed.</span></div>
+            <button class="btn small" type="button" data-reset="queue">Clear Unfollow Queue</button>
+          </li>
+        </ul>
+      </div>
+
+      <div class="card settings-card danger-zone">
+        <h3>Danger zone</h3>
+        <p><strong>Clear all Follow Check saved data</strong> deletes all tags, review progress, the Unfollow Queue and
+          session settings from this browser. It can't be undone, so export a backup first if you might want it back.</p>
+        <button class="btn danger" type="button" data-reset="all">Clear all Follow Check saved data</button>
+      </div>
+      <p class="rv-note">These options only affect data this page saved in this browser. Follow Check never changes or deletes your Instagram ZIP or any other file.</p>
+    </section>
+
+    <!-- Unfollow Queue: accounts you decided to unfollow yourself on Instagram -->
+    <section id="queue" class="review queue" hidden aria-label="Unfollow Queue">
+      <div class="review-top">
+        <h2>Unfollow Queue</h2>
+        <button id="q-exit" class="btn ghost" type="button">Exit queue <kbd>Esc</kbd></button>
+      </div>
+      <p class="q-disclaimer">Follow Check never unfollows anyone and can't see Instagram. Open the profile, press Unfollow on
+        Instagram yourself, then press <strong>Mark done</strong> here. “Done” only records what you told Follow Check.</p>
+
+      <div class="card rv-progress">
+        <div class="rv-progress-head">
+          <strong id="q-progress-text"></strong>
+          <span id="q-percent"></span>
+        </div>
+        <div class="progress-bar" id="q-bar" role="progressbar" aria-label="Queued accounts marked done" aria-valuemin="0">
+          <span class="seg keep" id="q-seg-done"></span><span class="seg ignore" id="q-seg-skipped"></span>
+        </div>
+        <dl class="rv-stats q-stats">
+          <div><dt>Total queued</dt><dd id="q-total"></dd></div>
+          <div><dt><span class="dot keep"></span>Completed</dt><dd id="q-done-count"></dd></div>
+          <div><dt>Remaining</dt><dd id="q-remaining"></dd></div>
+          <div><dt><span class="dot ignore"></span>Skipped</dt><dd id="q-skipped-count"></dd></div>
+        </dl>
+        <p class="q-stale" id="q-stale" hidden></p>
+      </div>
+
+      <div class="card session-card" id="session-card">
+        <div class="session-head">
+          <div>
+            <strong id="session-text"></strong>
+            <span class="session-sub">Counts the accounts you mark done. Optional.</span>
+          </div>
+          <button id="session-reset" class="btn small" type="button">Reset session</button>
+        </div>
+        <div class="progress-bar session-bar" id="session-bar" role="progressbar" aria-label="Session target progress" aria-valuemin="0" hidden>
+          <span class="seg keep" id="session-seg"></span>
+        </div>
+        <p id="session-reached" class="session-reached" role="status" hidden>You've reached your session target.</p>
+        <form id="session-form" class="session-form" novalidate>
+          <label for="session-target">Session target</label>
+          <input id="session-target" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="e.g. 20" aria-describedby="session-error">
+          <button class="btn small" type="submit">Set target</button>
+        </form>
+        <p id="session-error" class="session-error" role="alert" hidden></p>
+        <p class="session-note">Instagram doesn't publish a safe number of unfollows, so Follow Check doesn't suggest one.
+          The target is only your own number. Follow Check never starts, stops or continues anything on Instagram.</p>
+      </div>
+
+      <div class="tabs q-views" role="tablist" id="q-views" aria-label="Queue view">
+        <button role="tab" type="button" data-qview="work" aria-controls="q-card">One at a time</button>
+        <button role="tab" type="button" data-qview="manage" aria-controls="q-manage">Manage list</button>
+      </div>
+
+      <div class="card rv-card" id="q-card" tabindex="-1">
+        <div id="q-account">
+          <p class="rv-position" id="q-position"></p>
+          <span class="avatar rv-avatar" id="q-avatar" aria-hidden="true"></span>
+          <h3 class="rv-username" id="q-username"></h3>
+          <p class="rv-date" id="q-date"></p>
+          <p class="q-notes"><span id="q-status-note" class="qbadge" hidden></span><span id="q-tag-note" class="badge" hidden></span></p>
+          <a id="q-open" class="btn rv-open" target="_blank" rel="noopener noreferrer">Open Instagram profile &#8599; <kbd>O</kbd></a>
+          <div class="rv-choices" role="group" aria-label="What did you do with this account?">
+            <button type="button" class="rv-choice keep" id="q-done">Mark done <kbd>D</kbd></button>
+            <button type="button" class="rv-choice ignore" id="q-skip">Skip <kbd>S</kbd></button>
+            <button type="button" class="rv-choice keep-instead" id="q-keep">Keep instead <kbd>K</kbd></button>
+          </div>
+        </div>
+        <div id="q-finished" class="rv-done" hidden>
+          <h3 id="q-finished-title"></h3>
+          <p id="q-finished-text"></p>
+          <div class="rv-done-actions">
+            <button id="q-retry-skipped" class="btn primary" type="button"></button>
+            <button id="q-finished-exit" class="btn" type="button">Back to the list</button>
+          </div>
+        </div>
+        <div class="rv-nav">
+          <button id="q-prev" class="btn" type="button">&larr; Previous</button>
+          <button id="q-undo" class="btn" type="button">Undo <kbd>Z</kbd></button>
+        </div>
+      </div>
+
+      <div class="card list-card" id="q-manage" hidden>
+        <div class="toolbar">
+          <div class="controls">
+            <label class="search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <input id="q-search" type="search" placeholder="Search the queue  ( / )" autocomplete="off" spellcheck="false" aria-label="Search the queue">
+            </label>
+            <select id="q-sort" aria-label="Sort the queue">
+              <option value="az">Username A&ndash;Z</option>
+              <option value="za">Username Z&ndash;A</option>
+              <option value="newest">Followed: newest first</option>
+              <option value="oldest">Followed: oldest first</option>
+            </select>
+          </div>
+          <div class="filters" id="q-filters" role="group" aria-label="Filter the queue">
+            <button type="button" data-qfilter="all">All <span class="count" data-qfilter-count="total"></span></button>
+            <button type="button" data-qfilter="pending">Remaining <span class="count" data-qfilter-count="pending"></span></button>
+            <button type="button" data-qfilter="done"><span class="dot keep"></span>Completed <span class="count" data-qfilter-count="done"></span></button>
+            <button type="button" data-qfilter="skipped"><span class="dot ignore"></span>Skipped <span class="count" data-qfilter-count="skipped"></span></button>
+          </div>
+        </div>
+        <div class="bulk-bar" id="q-bulk-bar" role="region" aria-label="Select queued accounts and change them together">
+          <div class="bulk-select">
+            <button id="q-select-visible" class="btn small" type="button">Select all visible</button>
+            <button id="q-select-none" class="btn small" type="button">Deselect all</button>
+            <span class="selected-count" id="q-selected-count" aria-live="polite">0 selected</span>
+          </div>
+          <div class="bulk-actions" role="group" aria-label="Bulk actions for selected queued accounts">
+            <button class="btn small bulk keep" type="button" data-qbulk="done">Mark done</button>
+            <button class="btn small bulk ignore" type="button" data-qbulk="skipped">Mark skipped</button>
+            <button class="btn small bulk" type="button" data-qbulk="remove">Remove from queue</button>
+            <button class="btn small bulk" type="button" data-qbulk="keep">Keep instead</button>
+          </div>
+          <p class="bulk-note" id="q-bulk-note" hidden></p>
+        </div>
+        <p id="q-list-summary" class="list-summary"></p>
+        <ul id="q-list" class="list"></ul>
+        <button id="q-more" class="btn more" type="button" hidden>Show more</button>
+      </div>
+
+      <p class="rv-shortcuts" id="q-shortcuts">
+        <strong>Shortcuts</strong>
+        <span><kbd>D</kbd> Mark done</span><span><kbd>S</kbd> Skip</span><span><kbd>K</kbd> Keep instead</span>
+        <span><kbd>&larr;</kbd> Previous</span><span><kbd>Z</kbd> Undo</span>
+        <span><kbd>Enter</kbd> / <kbd>O</kbd> Open profile</span><span><kbd>Esc</kbd> Exit</span>
+      </p>
+    </section>
   </main>
 
   <dialog id="confirm" class="confirm" aria-labelledby="confirm-title">
     <form method="dialog">
       <h2 id="confirm-title"></h2>
       <p id="confirm-detail"></p>
+      <ul id="confirm-list" class="confirm-list" hidden></ul>
       <p id="confirm-hidden" class="confirm-hidden" hidden></p>
+      <label id="confirm-type-wrap" class="confirm-type" hidden>
+        <span>Type <strong id="confirm-type-word"></strong> to confirm</span>
+        <input id="confirm-type" type="text" autocomplete="off" spellcheck="false">
+      </label>
       <div class="confirm-actions">
         <button class="btn" value="cancel" id="confirm-cancel" autofocus>Cancel</button>
         <button class="btn primary" value="confirm" id="confirm-ok"></button>
@@ -224,13 +449,16 @@
     <button id="toast-undo" type="button">Undo</button>
   </div>
 
-  <footer class="footer">Your export is read in this tab and never uploaded or saved.
-    Only your Keep / Ignore / Unavailable choices are saved, in this browser.</footer>
+  <footer class="footer">Your export is read in this tab and never uploaded or saved. Only your Follow Check choices
+    (tags, review progress, Unfollow Queue, session target) are saved, in this browser.</footer>
 
   <script src="vendor/jszip.min.js"></script>
   <script src="parser.js"></script>
   <script src="tags.js"></script>
   <script src="review.js"></script>
+  <script src="queue.js"></script>
+  <script src="session.js"></script>
+  <script src="backup.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

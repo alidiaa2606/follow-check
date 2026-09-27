@@ -65,6 +65,48 @@ The app never checks profiles itself. Your place in the review and the skipped l
 are saved in `localStorage` next to the tags, so after closing the browser you
 upload the ZIP again and press **Resume review**.
 
+## Unfollow Queue
+Follow Check is an organisation tool: it **never** unfollows, follows, clicks, logs in,
+scrapes or checks anything on Instagram.
+
+1. In **Not following back**, tick accounts and choose **Add to Unfollow Queue**
+   (confirmed with the exact count; accounts already queued are never added twice).
+2. Open the queue from the dashboard's **Cleanup** panel. **One at a time** shows each
+   account with its follow date and tag, an **Open Instagram profile** link
+   (`https://www.instagram.com/USERNAME/`, new tab), and:
+   **Mark done** (you unfollowed it yourself; Follow Check only records what you tell it),
+   **Skip**, **Keep instead** (removes it from the queue and tags it Keep), Previous, Undo.
+3. **Manage list** has search, sorting, Remaining / Completed / Skipped filters, checkboxes
+   and confirmed bulk actions (Mark done, Mark skipped, Remove from queue, Keep instead).
+   Hidden or filtered-out accounts only change if you explicitly selected them.
+
+| Key (One at a time) | Action |
+|---|---|
+| `D` / `S` / `K` | Mark done / Skip / Keep instead |
+| `←` | Previous |
+| `Z` or `Ctrl/Cmd+Z` | Undo |
+| `Enter` / `O` | Open the Instagram profile |
+| `Esc` | Exit the queue |
+
+**Session tracking** (optional): counts the accounts you mark done and lets you set
+your own target ("12 / 20 handled this session"). Instagram doesn't publish a safe
+limit, so Follow Check doesn't suggest one, and it never stops or continues anything.
+
+## Backup & data
+**Backup & data** (top bar, available any time):
+- **Export Follow Check Backup** downloads a local JSON file (`format: follow-check-backup`,
+  `version: 1`) with tags, Review Mode progress, the Unfollow Queue and session settings.
+  It includes the usernames you tagged or queued, but none of your Instagram export.
+- **Import Follow Check Backup** validates the file (rejects malformed, damaged or
+  newer-format files without changing anything), shows what it contains, and replaces
+  your saved data only after you confirm.
+- Clear review progress / Clear Unfollow Queue progress / Clear Unfollow Queue, and
+  **Clear all Follow Check saved data** (requires typing DELETE). Each explains exactly
+  what will be deleted. None of them touch your Instagram ZIP or any file.
+
+Saved keys in `localStorage`: `followcheck.tags.v1`, `followcheck.review.v1`,
+`followcheck.queue.v1`, `followcheck.session.v1`. Nothing else is stored.
+
 ## Counts vs. your live profile
 Results come from the export, so they can differ slightly from the numbers on
 your Instagram profile (deactivated/suspended/deleted accounts, or activity after
@@ -79,16 +121,23 @@ in the data.
   classic `string_list_data` layout and the newer `label_values` layout.
 - `tags.js`: Keep / Ignore / Unavailable tags saved in `localStorage` (unit tested)
 - `review.js`: Review Mode queue, skip, previous, undo and resume position (unit tested)
+- `queue.js`: Unfollow Queue entries, statuses, workflow, undo (unit tested)
+- `session.js`: optional session counter and target (unit tested)
+- `backup.js`: backup file format v1, validation, restore (unit tested)
 - `vendor/jszip.min.js`: JSZip 3.10.2 for reading the ZIP in the browser (MIT or GPLv3)
 
 ## Status
 - [x] Step 1: parser (`parser.js`) + tests
 - [x] Step 2: upload page, totals, list, search
 - [x] Step 3: Keep / Ignore / Unavailable tags saved locally, with filters
-- [x] Step 4: Review Mode (one account at a time, shortcuts, progress, resume)
+- [x] Step 4: Review Mode, checkboxes, bulk tag actions, sorting
+- [x] Steps 5–8: Unfollow Queue, workflow, queue management, session tracking
+- [x] Steps 9–12: dashboard, backup / restore, data management, polish
 
 ## Tests
     node --test instagram/tests/*.test.js
 
-`parser.test.js` always runs. `ui.test.js` drives the real page in Chromium and
-is skipped unless Playwright is installed (`npm i --no-save playwright`).
+The unit tests (`parser`, `tags`, `review`, `queue`, `session`, `backup`) always run.
+`ui.test.js` drives the real page in Chromium, including 1,500- and 5,000-account
+performance runs, and is skipped unless Playwright is installed
+(`npm i --no-save playwright`). All test data is made up.

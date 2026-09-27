@@ -110,6 +110,15 @@
       size() {
         return tags.size;
       },
+      /** Saved-data shape, used for backups. */
+      snapshot() {
+        return { version: 1, tags: Object.fromEntries(tags) };
+      },
+      /** Remove every tag. */
+      clear() {
+        tags = new Map();
+        return save();
+      },
       /** false if the browser refused to save (e.g. storage disabled). */
       isPersistent() {
         return persistent;
