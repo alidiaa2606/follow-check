@@ -22,17 +22,36 @@ Or serve the folder locally:
 
 Then drop in the ZIP Instagram gave you (or the unzipped folder, or the JSON files).
 
+## Tags and privacy
+In **Not following back**, tag each account **Keep**, **Ignore** or **Unavailable**
+(click the active tag again to remove it, or use Undo). Filter by All / Unreviewed /
+Keep / Ignore / Unavailable; search and sort work inside each filter.
+
+Tags are saved in this browser's `localStorage`, keyed by username, so they
+survive reloads, restarts and newer exports. The export itself is never saved.
+Tags belong to the browser *and* to how you open the app: `file://` and
+`http://localhost:8000` keep separate tags, so pick one way and stick to it.
+Clearing site data for the page deletes the tags.
+
+## Counts vs. your live profile
+Results come from the export, so they can differ slightly from the numbers on
+your Instagram profile (deactivated/suspended/deleted accounts, or activity after
+the export). The app shows the export date (from the ZIP) and the newest activity
+in the data.
+
 ## Files
 - `index.html`: the page (a strict Content-Security-Policy blocks all network requests)
 - `styles.css`: styling (light and dark mode, mobile friendly)
 - `app.js`: reading files/ZIPs, totals, tabs, search, sort
-- `parser.js`: parsing and comparing the export (no DOM, unit tested)
+- `parser.js`: parsing and comparing the export (no DOM, unit tested). Supports the
+  classic `string_list_data` layout and the newer `label_values` layout.
+- `tags.js`: Keep / Ignore / Unavailable tags saved in `localStorage` (unit tested)
 - `vendor/jszip.min.js`: JSZip 3.10.2 for reading the ZIP in the browser (MIT or GPLv3)
 
 ## Status
 - [x] Step 1: parser (`parser.js`) + tests
 - [x] Step 2: upload page, totals, list, search
-- [ ] Step 3: Keep/Ignore tags saved locally
+- [x] Step 3: Keep / Ignore / Unavailable tags saved locally, with filters
 
 ## Tests
     node --test instagram/tests/*.test.js

@@ -1,0 +1,10 @@
+{
+  "relationships_following": [
+    {"fbid": "1", "timestamp": 1690000001, "media": [], "label_values": [{"label": "URL", "value": ""}, {"label": "Name", "value": "Alice A"}, {"label": "Username", "value": "alice"}]},
+    {"fbid": "2", "timestamp": 1690000002, "media": [], "label_values": [{"label": "URL", "value": "https://linktr.ee/not_a_username"}, {"label": "Name", "value": "Bob"}, {"label": "Username", "value": "bob.smith"}]},
+    {"fbid": "3", "timestamp": 1690000003, "media": [], "label_values": [{"label": "URL", "value": ""}, {"label": "Name", "value": ""}, {"label": "Username", "value": "dave"}]},
+    {"fbid": "4", "timestamp": 1690000004, "media": [], "label_values": [{"label": "URL", "value": ""}, {"label": "Name", "value": "Nat Geo"}, {"label": "Username", "value": "natgeo"}]},
+    {"fbid": "6", "timestamp": 1690000006, "media": [], "label_values": [{"label": "URL", "value": ""}, {"label": "Name", "value": ""}, {"label": "Username", "value": "href.only"}]},
+    {"fbid": "7", "timestamp": 1715000000, "media": [], "label_values": [{"label": "URL", "value": ""}, {"label": "Name", "value": "Brand New"}, {"label": "Username", "value": "brand_new"}]}
+  ]
+}

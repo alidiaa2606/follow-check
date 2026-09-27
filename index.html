@@ -66,8 +66,22 @@
         <button class="stat accent" data-tab="notFollowingBack" type="button"><span class="stat-value" id="stat-nfb">0</span><span class="stat-label">Not following you back</span></button>
         <button class="stat" data-tab="mutual" type="button"><span class="stat-value" id="stat-mutual">0</span><span class="stat-label">Mutual</span></button>
         <button class="stat" data-tab="fans" type="button"><span class="stat-value" id="stat-fans">0</span><span class="stat-label">You don't follow back</span></button>
+        <button class="stat reviewed" id="stat-reviewed-card" type="button" title="Accounts you've tagged in “Not following back”">
+          <span class="stat-value" id="stat-reviewed">0</span>
+          <span class="stat-label">Reviewed</span>
+          <span class="stat-breakdown" id="stat-breakdown"></span>
+        </button>
       </div>
-      <p id="sources" class="sources"></p>
+
+      <aside class="data-note" id="data-note">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+        <div>
+          <p><strong id="data-date"></strong> These results come from your Instagram export, not your live profile.
+            The follower and following counts on Instagram can differ slightly, for example because of deactivated,
+            suspended or deleted accounts, or follows and unfollows after the export was made.</p>
+          <p id="sources" class="sources"></p>
+        </div>
+      </aside>
 
       <div class="card list-card">
         <div class="toolbar">
@@ -90,7 +104,15 @@
               <option value="oldest">Oldest first</option>
             </select>
           </div>
+          <div class="filters" id="filters" role="group" aria-label="Filter by tag">
+            <button type="button" data-filter="all">All <span class="count" data-filter-count="all"></span></button>
+            <button type="button" data-filter="unreviewed">Unreviewed <span class="count" data-filter-count="unreviewed"></span></button>
+            <button type="button" data-filter="keep"><span class="dot keep"></span>Keep <span class="count" data-filter-count="keep"></span></button>
+            <button type="button" data-filter="ignore"><span class="dot ignore"></span>Ignore <span class="count" data-filter-count="ignore"></span></button>
+            <button type="button" data-filter="unavailable"><span class="dot unavailable"></span>Unavailable <span class="count" data-filter-count="unavailable"></span></button>
+          </div>
         </div>
+        <p id="storage-warning" class="storage-warning" hidden>This browser isn't allowing the app to save data, so your tags will be lost when you close the tab.</p>
         <p id="list-summary" class="list-summary"></p>
         <ul id="list" class="list"></ul>
         <button id="more" class="btn more" type="button" hidden>Show more</button>
@@ -98,10 +120,17 @@
     </section>
   </main>
 
-  <footer class="footer">Your data never leaves this browser tab. Close the tab to forget it.</footer>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden>
+    <span id="toast-text"></span>
+    <button id="toast-undo" type="button">Undo</button>
+  </div>
+
+  <footer class="footer">Your export is read in this tab and never uploaded or saved.
+    Only your Keep / Ignore / Unavailable choices are saved, in this browser.</footer>
 
   <script src="vendor/jszip.min.js"></script>
   <script src="parser.js"></script>
+  <script src="tags.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

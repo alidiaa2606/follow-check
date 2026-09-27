@@ -154,3 +154,61 @@ test('handles a large export quickly', () => {
   assert.equal(notFollowingBack.length, N / 2);
   assert.ok(Date.now() - start < 2000, 'should parse 100k entries in under 2s');
 });
+
+// ---------- Newer label_values layout (fake data) ----------
+
+test('parseEntry reads the label_values layout (Username label + entry timestamp)', () => {
+  const entry = { fbid: '1', timestamp: 1700000000, media: [], label_values: [
+    { label: 'URL', value: 'https://linktr.ee/somebody_else' },
+    { label: 'Name', value: 'Jane Doe' },
+    { label: 'Username', value: 'Jane.Doe' },
+  ] };
+  assert.deepEqual(P.parseEntry(entry), { username: 'jane.doe', href: 'https://www.instagram.com/jane.doe/', timestamp: 1700000000 });
+});
+
+test('label_values: finds Username inside nested dict groups', () => {
+  const entry = { timestamp: 5, label_values: [{ title: '', dict: [{ label: 'Name', value: 'X' }, { label: 'Username', value: 'nested_user' }] }] };
+  assert.equal(P.parseEntry(entry).username, 'nested_user');
+});
+
+test('label_values: the bio URL is never used as the username', () => {
+  const entry = { timestamp: 5, label_values: [{ label: 'URL', value: 'https://www.instagram.com/wrong_person' }, { label: 'Name', value: 'No Username' }] };
+  assert.equal(P.parseEntry(entry), null);
+});
+
+test('label_values: missing timestamp becomes null', () => {
+  assert.equal(P.parseEntry({ label_values: [{ label: 'Username', value: 'abc' }] }).timestamp, null);
+});
+
+test('second sample export (following.json in label_values layout) parses and compares', () => {
+  const dir = path.join(__dirname, 'fixtures', 'sample-export-2', 'connections', 'followers_and_following');
+  const files = fs.readdirSync(dir).map((n) => ({ name: n, text: fs.readFileSync(path.join(dir, n), 'utf8') }));
+  const r = P.parseExport(files);
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.warnings, []);
+  assert.equal(r.followers.size, 7);
+  assert.equal(r.following.size, 6);
+  assert.equal(r.following.get('brand_new').timestamp, 1715000000);
+  const c = P.compare(r.followers, r.following);
+  assert.deepEqual(names(c.notFollowingBack), ['brand_new', 'href.only']);
+  assert.deepEqual(names(c.fans), ['carol_', 'fan_only', 'new_fan']);
+});
+
+test('a label_values file mixed with the classic layout in one export', () => {
+  const r = P.parseExport([
+    file('followers_1.json', [{ string_list_data: [{ value: 'classic', timestamp: 10 }] }]),
+    file('followers_2.json', [{ timestamp: 20, label_values: [{ label: 'Username', value: 'modern' }] }]),
+    file('following.json', { relationships_following: [{ timestamp: 30, label_values: [{ label: 'Username', value: 'classic' }] }] }),
+  ]);
+  assert.deepEqual([...r.followers.keys()], ['classic', 'modern']);
+  assert.deepEqual([...r.following.keys()], ['classic']);
+});
+
+// ---------- Data date ----------
+
+test('latestTimestamp is the newest follow date in followers or following', () => {
+  const r = P.parseExport(loadSampleExport());
+  assert.equal(r.latestTimestamp, 1700000005);
+  const empty = P.parseExport([file('followers_1.json', []), file('following.json', { relationships_following: [] })]);
+  assert.equal(empty.latestTimestamp, null);
+});

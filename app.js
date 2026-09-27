@@ -13,9 +13,31 @@
     followers: { empty: 'No followers.', dateLabel: 'Followed you' },
   };
 
+  const TAG_LABELS = { keep: 'Keep', ignore: 'Ignore', unavailable: 'Unavailable' };
+  const TAG_HINTS = {
+    keep: 'Keep: you want to keep following this account',
+    ignore: 'Ignore: leave this account out when reviewing who to unfollow',
+    unavailable: 'Unavailable: the account looks deleted, deactivated or suspended',
+  };
+  const FILTER_EMPTY = {
+    unreviewed: 'Nothing left to review. Every account here has a tag.',
+    keep: 'No accounts tagged Keep yet.',
+    ignore: 'No accounts tagged Ignore yet.',
+    unavailable: 'No accounts tagged Unavailable yet.',
+  };
+
+  let storage = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    // Storage blocked (e.g. some privacy modes): tags work for this session only.
+  }
+  const tags = IGTags.createTagStore(storage);
+
   const state = {
     lists: null, // { notFollowingBack, fans, mutual, following, followers }
     tab: 'notFollowingBack',
+    filter: 'all', // tag filter, used on the "not following back" tab
     query: '',
     sort: 'az',
     limit: PAGE_SIZE,
@@ -26,7 +48,10 @@
   const isZip = (file) => /\.zip$/i.test(file.name) || file.type === 'application/zip';
   const relPath = (file) => file.webkitRelativePath || file.relativePath || file.name;
 
-  /** Turn picked/dropped files (ZIPs and/or JSON) into [{name, text}] for the parser. */
+  /**
+   * Turn picked/dropped files (ZIPs and/or JSON) into [{name, text, date}] for the parser.
+   * `date` is only set for files from a ZIP, where it's when Instagram created the export.
+   */
   async function readFiles(files) {
     const out = [];
     for (const file of files) {
@@ -41,7 +66,9 @@
         zip.forEach((path, entry) => {
           if (!entry.dir && IGParser.classifyFile(path)) entries.push(entry);
         });
-        for (const entry of entries) out.push({ name: entry.name, text: await entry.async('string') });
+        for (const entry of entries) {
+          out.push({ name: entry.name, text: await entry.async('string'), date: entry.date });
+        }
       } else if (IGParser.classifyFile(relPath(file))) {
         out.push({ name: relPath(file), text: await file.text() });
       }
@@ -100,7 +127,9 @@
         return;
       }
       if (result.warnings.length) showMessages(result.warnings, 'warning');
-      showResults(result);
+      const zipDates = inputs.map((f) => f.date).filter((d) => d instanceof Date && !isNaN(d));
+      const exportDate = zipDates.length ? new Date(Math.max(...zipDates)) : null;
+      showResults(result, exportDate);
     } catch (e) {
       setStatus('');
       showMessages([e.message || String(e)], 'error');
@@ -109,7 +138,7 @@
 
   // ---------- Results ----------
 
-  function showResults(result) {
+  function showResults(result, exportDate) {
     const { followers, following } = result;
     const { notFollowingBack, fans, mutual } = IGParser.compare(followers, following);
     const byName = (a, b) => a.username.localeCompare(b.username);
@@ -129,15 +158,37 @@
     for (const el of document.querySelectorAll('[data-count]')) {
       el.textContent = fmt(state.lists[el.dataset.count].length);
     }
-    $('sources').textContent = 'Read ' + result.files
-      .map((f) => `${f.name} (${fmt(f.entries)})`).join(', ') + '.';
+
+    const dates = [];
+    if (exportDate) dates.push(`Export created ${dateFormat.format(exportDate)}.`);
+    if (result.latestTimestamp) dates.push(`Newest activity in the data: ${formatDate(result.latestTimestamp)}.`);
+    $('data-date').textContent = dates.join(' ');
+
+    const sources = ['Read ' + result.files.map((f) => `${f.name} (${fmt(f.entries)})`).join(', ') + '.'];
+    const missing = tags.countMissing(new Set(notFollowingBack.map((e) => e.username)));
+    if (missing) {
+      sources.push(`${fmt(missing)} saved tag${missing === 1 ? ' is' : 's are'} for accounts not in this “Not following back” list. They're kept in case those accounts show up again.`);
+    }
+    $('sources').textContent = sources.join(' ');
 
     $('upload').hidden = true;
     $('results').hidden = false;
     $('reset').hidden = false;
     state.query = '';
     $('search').value = '';
+    updateTagCounts();
     setTab('notFollowingBack');
+  }
+
+  function updateTagCounts() {
+    if (!state.lists) return;
+    const c = tags.counts(state.lists.notFollowingBack);
+    $('stat-reviewed').textContent = fmt(c.keep + c.ignore + c.unavailable);
+    $('stat-breakdown').textContent = `${fmt(c.keep)} keep · ${fmt(c.ignore)} ignore · ${fmt(c.unavailable)} unavailable`;
+    for (const el of document.querySelectorAll('[data-filter-count]')) {
+      el.textContent = fmt(c[el.dataset.filterCount]);
+    }
+    $('storage-warning').hidden = tags.isPersistent();
   }
 
   function setTab(tab) {
@@ -146,9 +197,15 @@
     for (const el of document.querySelectorAll('#tabs [role=tab]')) {
       el.setAttribute('aria-selected', String(el.dataset.tab === tab));
     }
-    for (const el of document.querySelectorAll('.stat')) {
+    for (const el of document.querySelectorAll('.stat[data-tab]')) {
       el.classList.toggle('active', el.dataset.tab === tab);
     }
+    render();
+  }
+
+  function setFilter(filter) {
+    state.filter = filter;
+    state.limit = PAGE_SIZE;
     render();
   }
 
@@ -166,12 +223,21 @@
     }
   }
 
+  const taggable = () => state.tab === 'notFollowingBack';
+
   function render() {
     if (!state.lists) return;
     const all = state.lists[state.tab];
+    const filtering = taggable() && state.filter !== 'all';
+    const base = filtering ? tags.filter(all, state.filter) : all;
     const q = normalizeQuery(state.query);
-    const matches = sorted(q ? all.filter((e) => e.username.includes(q)) : all);
+    const matches = sorted(q ? base.filter((e) => e.username.includes(q)) : base);
     const shown = matches.slice(0, state.limit);
+
+    $('filters').hidden = !taggable();
+    for (const el of document.querySelectorAll('#filters [data-filter]')) {
+      el.setAttribute('aria-pressed', String(el.dataset.filter === state.filter));
+    }
 
     const list = $('list');
     list.replaceChildren();
@@ -181,13 +247,17 @@
 
     if (!all.length) {
       list.appendChild(emptyRow(TABS[state.tab].empty));
+    } else if (!base.length) {
+      list.appendChild(emptyRow(FILTER_EMPTY[state.filter]));
     } else if (!matches.length) {
       list.appendChild(emptyRow(`No usernames match “${state.query.trim()}”.`));
     }
 
+    const noun = (n) => `${fmt(n)} account${n === 1 ? '' : 's'}`;
+    const filterLabel = filtering ? ` · ${state.filter === 'unreviewed' ? 'Unreviewed' : TAG_LABELS[state.filter]}` : '';
     $('list-summary').textContent = q
-      ? `${fmt(matches.length)} of ${fmt(all.length)} match “${state.query.trim()}”`
-      : `${fmt(all.length)} account${all.length === 1 ? '' : 's'}`;
+      ? `${fmt(matches.length)} of ${noun(base.length)} match “${state.query.trim()}”${filterLabel}`
+      : `${noun(base.length)}${filterLabel}`;
 
     const remaining = matches.length - shown.length;
     $('more').hidden = remaining <= 0;
@@ -195,9 +265,11 @@
   }
 
   function row(entry, q) {
+    const tag = tags.get(entry.username);
     const li = document.createElement('li');
-    li.className = 'row';
+    li.className = 'row' + (tag ? ` tagged-${tag}` : '');
     li.dataset.username = entry.username;
+    if (tag) li.dataset.tag = tag;
 
     const avatar = document.createElement('span');
     avatar.className = 'avatar';
@@ -219,9 +291,50 @@
       date.textContent = `${TABS[state.tab].dateLabel} ${formatDate(entry.timestamp)}`;
       info.appendChild(date);
     }
-
     li.append(avatar, info);
+
+    if (taggable()) {
+      li.appendChild(tagButtons(entry.username, tag));
+    } else if (tag) {
+      const badge = document.createElement('span');
+      badge.className = `badge ${tag}`;
+      badge.textContent = TAG_LABELS[tag];
+      li.appendChild(badge);
+    }
     return li;
+  }
+
+  function tagButtons(username, current) {
+    const group = document.createElement('div');
+    group.className = 'tag-buttons';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', `Tag @${username}`);
+    for (const tag of IGTags.TAGS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `tag-btn ${tag}`;
+      b.dataset.setTag = tag;
+      b.textContent = TAG_LABELS[tag];
+      const on = current === tag;
+      b.setAttribute('aria-pressed', String(on));
+      b.title = on ? `${TAG_LABELS[tag]} (click again to remove the tag)` : TAG_HINTS[tag];
+      group.appendChild(b);
+    }
+    return group;
+  }
+
+  function applyTag(username, tag, { toast = true } = {}) {
+    const previous = tags.get(username);
+    tags.set(username, tag);
+    updateTagCounts();
+    render();
+    // Keep keyboard focus on the row if it's still visible.
+    const btn = $('list').querySelector(`.row[data-username="${username}"] [data-set-tag="${tag || previous}"]`);
+    if (btn) btn.focus();
+    if (toast) {
+      showToast(tag ? `@${username} tagged ${TAG_LABELS[tag]}` : `Removed tag from @${username}`,
+        () => applyTag(username, previous, { toast: false }));
+    }
   }
 
   function emptyRow(text) {
@@ -238,6 +351,22 @@
     const mark = document.createElement('mark');
     mark.textContent = name.slice(i, i + q.length);
     return [name.slice(0, i), mark, name.slice(i + q.length)];
+  }
+
+  // ---------- Toast with undo ----------
+
+  let toastTimer = null;
+  let toastUndo = null;
+  function showToast(text, undo) {
+    $('toast-text').textContent = text;
+    toastUndo = undo;
+    $('toast').hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(hideToast, 6000);
+  }
+  function hideToast() {
+    $('toast').hidden = true;
+    toastUndo = null;
   }
 
   // ---------- Helpers ----------
@@ -282,6 +411,7 @@
     $('upload').hidden = false;
     $('file-input').value = '';
     $('folder-input').value = '';
+    hideToast();
     clearMessages();
     setStatus('');
   }
@@ -311,6 +441,33 @@
   for (const el of document.querySelectorAll('[data-tab]')) {
     el.addEventListener('click', () => setTab(el.dataset.tab));
   }
+  $('stat-reviewed-card').addEventListener('click', () => {
+    state.filter = 'all';
+    setTab('notFollowingBack');
+  });
+  for (const el of document.querySelectorAll('#filters [data-filter]')) {
+    el.addEventListener('click', () => setFilter(el.dataset.filter));
+  }
+  $('list').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-set-tag]');
+    if (!btn) return;
+    const username = btn.closest('.row').dataset.username;
+    const tag = btn.dataset.setTag;
+    applyTag(username, tags.get(username) === tag ? null : tag); // clicking the active tag removes it
+  });
+  $('toast-undo').addEventListener('click', () => {
+    const undo = toastUndo;
+    hideToast();
+    if (undo) undo();
+  });
+  // Another tab changed the tags: pick up the change.
+  window.addEventListener('storage', (e) => {
+    if (e.key !== IGTags.STORAGE_KEY) return;
+    tags.reload();
+    updateTagCounts();
+    render();
+  });
+
   $('search').addEventListener('input', (e) => {
     state.query = e.target.value;
     state.limit = PAGE_SIZE;

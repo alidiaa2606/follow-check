@@ -24,22 +24,32 @@ const EXECUTABLE = fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browser
 
 let browser;
 let zipPath;
+let zip2Path;
+const EXPORT_2_DIR = path.join(__dirname, 'fixtures', 'sample-export-2');
+const ZIP_DATE = new Date(2026, 8, 27, 9, 8); // shown in the app as the export date
+
+/** Build a ZIP shaped like Instagram's download from a sample export folder. */
+async function buildZip(exportDir, fileName) {
+  const dir = path.join(exportDir, 'connections', 'followers_and_following');
+  const zip = new JSZip();
+  for (const name of fs.readdirSync(dir)) {
+    zip.file(`connections/followers_and_following/${name}`, fs.readFileSync(path.join(dir, name)), { date: ZIP_DATE });
+  }
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ig-')), fileName);
+  fs.writeFileSync(out, await zip.generateAsync({ type: 'nodebuffer' }));
+  return out;
+}
 
 test.before(async () => {
   browser = await chromium.launch({ executablePath: EXECUTABLE });
-  // Build a ZIP shaped like Instagram's download from the sample export.
-  const zip = new JSZip();
-  for (const name of fs.readdirSync(FF_DIR)) {
-    zip.file(`connections/followers_and_following/${name}`, fs.readFileSync(path.join(FF_DIR, name)));
-  }
-  zipPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ig-')), 'instagram-export.zip');
-  fs.writeFileSync(zipPath, await zip.generateAsync({ type: 'nodebuffer' }));
+  zipPath = await buildZip(EXPORT_DIR, 'instagram-export.zip');
+  zip2Path = await buildZip(EXPORT_2_DIR, 'instagram-export-newer.zip');
 });
 test.after(() => browser && browser.close());
 
 /** Open the app and record console errors and any non-file:// requests. */
-async function openApp() {
-  const page = await browser.newPage();
+async function openApp(context) {
+  const page = await (context || browser).newPage(context ? undefined : { locale: 'en-US', timezoneId: 'UTC' });
   const problems = [];
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
   page.on('console', (m) => m.type() === 'error' && problems.push(`console: ${m.text()}`));
@@ -88,7 +98,7 @@ test('search filters usernames (case-insensitive, ignores leading @)', async () 
   await page.fill('#search', 'nat');
   assert.deepEqual(await listed(page), ['natgeo']);
   assert.equal(await page.textContent('#list .row mark'), 'nat');
-  assert.equal(await page.textContent('#list-summary'), '1 of 3 match “nat”');
+  assert.equal(await page.textContent('#list-summary'), '1 of 3 accounts match “nat”');
 
   await page.fill('#search', '@OLD');
   assert.deepEqual(await listed(page), ['old_friend']);
@@ -189,5 +199,188 @@ test('large lists are paged with "Show more"', async () => {
   await page.click('#more');
   assert.equal((await listed(page)).length, 450);
   assert.equal(await page.isHidden('#more'), true);
+  await page.close();
+});
+
+// ---------- Step 3: Keep / Ignore / Unavailable ----------
+
+const tagOf = (page, u) => page.getAttribute(`#list .row[data-username="${u}"]`, 'data-tag');
+const clickTag = (page, u, tag) => page.click(`#list .row[data-username="${u}"] [data-set-tag=${tag}]`);
+const filterCounts = (page) => page.$$eval('[data-filter-count]', (els) =>
+  Object.fromEntries(els.map((e) => [e.dataset.filterCount, Number(e.textContent)])));
+async function upload(page, file) {
+  await page.setInputFiles('#file-input', file);
+  await page.waitForSelector('#results:not([hidden])');
+}
+
+test('tag accounts Keep / Ignore / Unavailable, change a tag, remove it, undo', async () => {
+  const { page, problems } = await openApp();
+  await upload(page, zipPath);
+  assert.equal(await page.isVisible('#filters'), true);
+  assert.deepEqual(await filterCounts(page), { all: 3, unreviewed: 3, keep: 0, ignore: 0, unavailable: 0 });
+  assert.equal(await page.textContent('#stat-reviewed'), '0');
+
+  await clickTag(page, 'natgeo', 'keep');
+  assert.equal(await tagOf(page, 'natgeo'), 'keep');
+  assert.equal(await page.getAttribute('.row[data-username=natgeo] [data-set-tag=keep]', 'aria-pressed'), 'true');
+  assert.equal(await page.textContent('#toast-text'), '@natgeo tagged Keep');
+
+  await clickTag(page, 'old_friend', 'unavailable');
+  await clickTag(page, 'href.only', 'ignore');
+  assert.deepEqual(await filterCounts(page), { all: 3, unreviewed: 0, keep: 1, ignore: 1, unavailable: 1 });
+  assert.equal(await page.textContent('#stat-reviewed'), '3');
+  assert.equal(await page.textContent('#stat-breakdown'), '1 keep · 1 ignore · 1 unavailable');
+
+  // Change a tag.
+  await clickTag(page, 'natgeo', 'ignore');
+  assert.equal(await tagOf(page, 'natgeo'), 'ignore');
+  assert.deepEqual(await filterCounts(page), { all: 3, unreviewed: 0, keep: 0, ignore: 2, unavailable: 1 });
+
+  // Clicking the active tag removes it.
+  await clickTag(page, 'natgeo', 'ignore');
+  assert.equal(await tagOf(page, 'natgeo'), null);
+  assert.equal(await page.textContent('#toast-text'), 'Removed tag from @natgeo');
+  assert.equal(await page.textContent('#stat-reviewed'), '2');
+
+  // Undo brings it back.
+  await page.click('#toast-undo');
+  assert.equal(await tagOf(page, 'natgeo'), 'ignore');
+  assert.equal(await page.isHidden('#toast'), true);
+  assert.equal(await page.isHidden('#storage-warning'), true);
+  assert.deepEqual(problems, []);
+  await page.close();
+});
+
+test('tag filters combine with search and sorting', async () => {
+  const { page } = await openApp();
+  await upload(page, zipPath);
+  await clickTag(page, 'natgeo', 'keep');
+  await clickTag(page, 'old_friend', 'keep');
+  await clickTag(page, 'href.only', 'ignore');
+
+  await page.click('#filters [data-filter=keep]');
+  assert.equal(await page.getAttribute('#filters [data-filter=keep]', 'aria-pressed'), 'true');
+  assert.deepEqual(await listed(page), ['natgeo', 'old_friend']);
+  assert.equal(await page.textContent('#list-summary'), '2 accounts · Keep');
+
+  await page.fill('#search', 'old');
+  assert.deepEqual(await listed(page), ['old_friend']);
+  assert.equal(await page.textContent('#list-summary'), '1 of 2 accounts match “old” · Keep');
+  await page.fill('#search', '');
+
+  await page.selectOption('#sort', 'za');
+  assert.deepEqual(await listed(page), ['old_friend', 'natgeo']);
+  await page.selectOption('#sort', 'az');
+
+  await page.click('#filters [data-filter=unreviewed]');
+  assert.deepEqual(await listed(page), []);
+  assert.match(await page.textContent('#list .empty'), /Nothing left to review/);
+
+  await page.click('#filters [data-filter=all]');
+  assert.deepEqual(await listed(page), ['href.only', 'natgeo', 'old_friend']);
+
+  // Retagging inside a filtered view moves the account out of it.
+  await page.click('#filters [data-filter=ignore]');
+  assert.deepEqual(await listed(page), ['href.only']);
+  await clickTag(page, 'href.only', 'unavailable');
+  assert.deepEqual(await listed(page), []);
+  assert.match(await page.textContent('#list .empty'), /No accounts tagged Ignore yet/);
+  await page.click('#filters [data-filter=unavailable]');
+  assert.deepEqual(await listed(page), ['href.only']);
+
+  // Other tabs: no filters or buttons, but tags show as badges.
+  await page.click('#tabs [data-tab=following]');
+  assert.equal(await page.isHidden('#filters'), true);
+  assert.equal(await page.$('#list [data-set-tag]'), null);
+  assert.equal(await page.textContent('.row[data-username=natgeo] .badge'), 'Keep');
+  assert.equal((await listed(page)).length, 6); // tag filter doesn't apply here
+  await page.close();
+});
+
+test('tags persist after reloading and after closing and reopening the tab', async () => {
+  const context = await browser.newContext();
+  let { page } = await openApp(context);
+  await upload(page, zipPath);
+  await clickTag(page, 'natgeo', 'keep');
+  await clickTag(page, 'old_friend', 'unavailable');
+  await clickTag(page, 'href.only', 'ignore');
+
+  await page.reload();
+  await upload(page, zipPath);
+  assert.equal(await tagOf(page, 'natgeo'), 'keep');
+  assert.equal(await tagOf(page, 'old_friend'), 'unavailable');
+  assert.equal(await tagOf(page, 'href.only'), 'ignore');
+
+  await page.close();
+  ({ page } = await openApp(context));
+  await upload(page, zipPath);
+  assert.deepEqual(await filterCounts(page), { all: 3, unreviewed: 0, keep: 1, ignore: 1, unavailable: 1 });
+  await context.close();
+});
+
+test('tags persist after fully quitting and restarting the browser', async () => {
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'ig-profile-'));
+  const launch = () => chromium.launchPersistentContext(profile, { executablePath: EXECUTABLE });
+
+  let context = await launch();
+  let page = await context.newPage();
+  await page.goto(APP_URL);
+  await upload(page, zipPath);
+  await clickTag(page, 'natgeo', 'keep');
+  await clickTag(page, 'old_friend', 'unavailable');
+  await context.close();
+
+  context = await launch();
+  page = await context.newPage();
+  await page.goto(APP_URL);
+  await upload(page, zipPath);
+  assert.equal(await tagOf(page, 'natgeo'), 'keep');
+  assert.equal(await tagOf(page, 'old_friend'), 'unavailable');
+  assert.equal(await tagOf(page, 'href.only'), null);
+  await context.close();
+});
+
+test('uploading a newer export keeps existing tags', async () => {
+  const { page, problems } = await openApp();
+  await upload(page, zipPath);
+  await clickTag(page, 'natgeo', 'keep');
+  await clickTag(page, 'old_friend', 'unavailable');
+  await clickTag(page, 'href.only', 'ignore');
+
+  // Newer export: old_friend unfollowed, natgeo now follows back, brand_new followed.
+  await page.click('#reset');
+  await upload(page, zip2Path);
+  assert.deepEqual(await stats(page), { followers: '7', following: '6', nfb: '2', mutual: '4', fans: '3' });
+  assert.deepEqual(await listed(page), ['brand_new', 'href.only']);
+  assert.equal(await tagOf(page, 'href.only'), 'ignore');
+  assert.equal(await tagOf(page, 'brand_new'), null);
+  assert.deepEqual(await filterCounts(page), { all: 2, unreviewed: 1, keep: 0, ignore: 1, unavailable: 0 });
+  assert.match(await page.textContent('#sources'), /2 saved tags are for accounts not in this “Not following back” list/);
+  await page.click('#tabs [data-tab=mutual]');
+  assert.equal(await page.textContent('.row[data-username=natgeo] .badge'), 'Keep');
+
+  // Going back to the older export: the tags for missing accounts were kept.
+  await page.reload();
+  await upload(page, zipPath);
+  assert.equal(await tagOf(page, 'natgeo'), 'keep');
+  assert.equal(await tagOf(page, 'old_friend'), 'unavailable');
+  assert.equal(await tagOf(page, 'href.only'), 'ignore');
+  assert.deepEqual(problems, []);
+  await page.close();
+});
+
+test('data note explains export vs live counts and shows the data date', async () => {
+  const { page } = await openApp();
+  await upload(page, zipPath);
+  const note = await page.textContent('#data-note');
+  assert.match(note, /come from your Instagram export, not your live profile/);
+  assert.match(note, /deactivated/);
+  assert.equal(await page.textContent('#data-date'),
+    'Export created Sep 27, 2026. Newest activity in the data: Nov 14, 2023.');
+
+  // Loose JSON files carry no export date: only the newest activity is shown.
+  await page.click('#reset');
+  await upload(page, ['followers_1.json', 'followers_2.json', 'following.json'].map((f) => path.join(FF_DIR, f)));
+  assert.equal(await page.textContent('#data-date'), 'Newest activity in the data: Nov 14, 2023.');
   await page.close();
 });

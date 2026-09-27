@@ -54,6 +54,8 @@
    *   { string_list_data: [{ value: "user", href, timestamp }] }    (followers, older following)
    *   { title: "user", string_list_data: [{ href, timestamp }] }    (newer following)
    *   { string_list_data: [{ href: ".../_u/user", timestamp }] }    (href only)
+   *   { timestamp, label_values: [{ label: "Username", value: "user" }, ...] }
+   *     (newer layout, already used for pending requests, close friends, etc.)
    */
   function parseEntry(entry) {
     if (!entry || typeof entry !== 'object') return null;
@@ -61,14 +63,33 @@
     const username =
       normalizeUsername(data.value) ||
       normalizeUsername(entry.title) ||
-      usernameFromHref(data.href);
+      usernameFromHref(data.href) ||
+      normalizeUsername(labelValue(entry.label_values, 'username'));
     if (!username) return null;
-    const ts = Number(data.timestamp);
+    const ts = Number(data.timestamp ?? entry.timestamp);
     return {
       username,
       href: `https://www.instagram.com/${username}/`,
       timestamp: Number.isFinite(ts) && ts > 0 ? ts : null,
     };
+  }
+
+  /**
+   * Find a label's value in a label_values array, looking inside nested
+   * { dict: [...] } groups too. Only the "Username" label is used for usernames:
+   * in this layout "URL" is the website from the account's bio, not its profile.
+   */
+  function labelValue(labelValues, label) {
+    if (!Array.isArray(labelValues)) return null;
+    for (const item of labelValues) {
+      if (!item || typeof item !== 'object') continue;
+      if (typeof item.label === 'string' && item.label.toLowerCase() === label && typeof item.value === 'string') {
+        return item.value;
+      }
+      const nested = labelValue(item.dict, label);
+      if (nested) return nested;
+    }
+    return null;
   }
 
   /** Find the list of entries in a parsed file, whatever it's wrapped in. */
@@ -148,7 +169,18 @@
     if (!hasFollowing) errors.push('No following file found (following.json).');
 
     report.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    return { followers, following, files: report, warnings, errors };
+    return { followers, following, files: report, warnings, errors, latestTimestamp: latestTimestamp(followers, following) };
+  }
+
+  /** Newest follow timestamp (seconds) in the data, or null: "data as of" when no export date is known. */
+  function latestTimestamp(...maps) {
+    let max = null;
+    for (const map of maps) {
+      for (const { timestamp } of map.values()) {
+        if (timestamp && (max === null || timestamp > max)) max = timestamp;
+      }
+    }
+    return max;
   }
 
   /**
