@@ -1,4 +1,4 @@
-// Run with: node --test instagram/tests/
+// Run with: npm test  (or: node --test tests/*.test.js)
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

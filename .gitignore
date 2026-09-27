@@ -1,0 +1,11 @@
+# Dependencies (dev only: Playwright for the browser tests)
+node_modules/
+
+# Never commit personal data: Instagram exports and Follow Check backups
+*.zip
+follow-check-backup-*.json
+/connections/
+
+# OS / editor files
+.DS_Store
+Thumbs.db

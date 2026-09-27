@@ -1,6 +1,6 @@
 // Browser test for the upload page. Needs Playwright + Chromium; skipped otherwise.
-//   npm i --no-save playwright jszip   (or point NODE_PATH at an install)
-//   node --test instagram/tests/*.test.js
+//   npm install && npx playwright install chromium   (or point NODE_PATH at an install)
+//   npm test  (or: node --test tests/*.test.js)
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

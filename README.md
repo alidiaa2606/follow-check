@@ -1,26 +1,59 @@
-# Follow Check (Instagram export analyzer)
+# Follow Check
 
-A private, local-only tool that compares your Instagram followers and following
-lists from Instagram's own data export. No Instagram login, no server: all
-processing happens in your browser.
+Follow Check is a private, local-only web app that analyzes your Instagram
+followers and following using the data export Instagram gives you. It shows who
+doesn't follow you back, lets you review and tag accounts, and helps you organize
+accounts you decide to unfollow yourself.
 
-## Getting your export
-Instagram → Accounts Center → Your information and permissions →
-Download your information → choose **Followers and following**, format **JSON**.
+**No Instagram login. No server. No uploads.** Everything runs in your browser.
 
-The export contains `connections/followers_and_following/followers_1.json`
-(plus `followers_2.json`, ... for large accounts) and `following.json`.
+## Privacy model
+- **Your export stays on your device.** The ZIP (or JSON files) is read by the page
+  in your browser tab. It is never uploaded, and it is not saved: close the tab and
+  it is gone.
+- **No network access.** `index.html` sets a strict Content-Security-Policy
+  (`default-src 'none'; connect-src 'none'; …`): the page can only load its own
+  files from this folder and cannot send requests anywhere. There is no analytics,
+  tracking, CDN or third-party code other than the bundled `vendor/jszip.min.js`.
+- **No Instagram access.** Follow Check never asks for your Instagram username or
+  password, never uses Instagram's API, never scrapes, and never follows, unfollows
+  or clicks anything. The only Instagram links are normal
+  `https://www.instagram.com/USERNAME/` profile links that open in a new tab when
+  *you* click them.
+- **What is saved.** Only your Follow Check choices are kept, in this browser's
+  `localStorage`: tags, Review Mode progress, the Unfollow Queue and session
+  settings (keys `followcheck.tags.v1`, `followcheck.review.v1`,
+  `followcheck.queue.v1`, `followcheck.session.v1`). You can clear them any time in
+  **Backup & data**, or move them with a local backup file.
+- **Backups are local files.** "Export Follow Check Backup" downloads a JSON file
+  to your device; it contains the usernames you tagged or queued, but none of your
+  Instagram export. Keep it private. It is never uploaded.
 
-## Opening the app
-Easiest: download the repo and **double-click `instagram/index.html`**. It opens
-in your browser and works straight from the file, with no install or server.
+## Running Follow Check
+No build step and no install are needed.
 
-Or serve the folder locally:
+**Easiest:** download or clone this repository and **double-click `index.html`**.
+It opens in your browser and works straight from the file.
 
-    cd instagram && python3 -m http.server 8000
+**Or serve the folder locally** (any static server works):
+
+    python3 -m http.server 8000
     # then open http://localhost:8000
 
 Then drop in the ZIP Instagram gave you (or the unzipped folder, or the JSON files).
+
+Saved data belongs to the browser *and* to how you open the app: `file://` and
+`http://localhost:8000` keep separate saved data, so pick one way and stick to it
+(or move your data with a backup).
+
+## Getting your Instagram export
+Instagram → Accounts Center → Your information and permissions →
+**Export your information** (called *Download your information* in some versions) →
+choose **Some of your information** → **Followers and following** →
+**Download to device**, date range **All time**, format **JSON**.
+
+The export contains `connections/followers_and_following/followers_1.json`
+(plus `followers_2.json`, … for large accounts) and `following.json`.
 
 ## Tags and privacy
 In **Not following back**, tag each account **Keep**, **Ignore** or **Unavailable**
@@ -113,7 +146,7 @@ your Instagram profile (deactivated/suspended/deleted accounts, or activity afte
 the export). The app shows the export date (from the ZIP) and the newest activity
 in the data.
 
-## Files
+## Repository layout
 - `index.html`: the page (a strict Content-Security-Policy blocks all network requests)
 - `styles.css`: styling (light and dark mode, mobile friendly)
 - `app.js`: reading files/ZIPs, totals, tabs, search, sort
@@ -126,18 +159,23 @@ in the data.
 - `backup.js`: backup file format v1, validation, restore (unit tested)
 - `vendor/jszip.min.js`: JSZip 3.10.2 for reading the ZIP in the browser (MIT or GPLv3)
 
-## Status
-- [x] Step 1: parser (`parser.js`) + tests
-- [x] Step 2: upload page, totals, list, search
-- [x] Step 3: Keep / Ignore / Unavailable tags saved locally, with filters
-- [x] Step 4: Review Mode, checkboxes, bulk tag actions, sorting
-- [x] Steps 5–8: Unfollow Queue, workflow, queue management, session tracking
-- [x] Steps 9–12: dashboard, backup / restore, data management, polish
+- `tests/`: unit tests and browser tests, with made-up sample exports in `tests/fixtures/`
+- `package.json`: test script only (the app itself has no dependencies)
 
 ## Tests
-    node --test instagram/tests/*.test.js
+    npm test                 # or: node --test tests/*.test.js
 
-The unit tests (`parser`, `tags`, `review`, `queue`, `session`, `backup`) always run.
-`ui.test.js` drives the real page in Chromium, including 1,500- and 5,000-account
-performance runs, and is skipped unless Playwright is installed
-(`npm i --no-save playwright`). All test data is made up.
+The unit tests (`parser`, `tags`, `review`, `queue`, `session`, `backup`) need only
+Node.js 18+. `tests/ui.test.js` drives the real page in Chromium, including 1,500-
+and 5,000-account performance runs; it is skipped unless Playwright is installed:
+
+    npm install              # installs Playwright (dev only)
+    npx playwright install chromium
+    npm test
+
+All test data is made up. Never commit a real Instagram export or a Follow Check
+backup: `.gitignore` blocks `*.zip` and `follow-check-backup-*.json` to help.
+
+## History
+Follow Check was first developed inside another repository and moved here as a
+standalone project, with its commit history (steps 1–12) preserved.
