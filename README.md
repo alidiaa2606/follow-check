@@ -47,10 +47,18 @@ Saved data belongs to the browser *and* to how you open the app: `file://` and
 (or move your data with a backup).
 
 ## Getting your Instagram export
-Instagram → Accounts Center → Your information and permissions →
-**Export your information** (called *Download your information* in some versions) →
-choose **Some of your information** → **Followers and following** →
-**Download to device**, date range **All time**, format **JSON**.
+The upload screen has a step-by-step guide (**How do I get my Instagram export?**). In short
+(menu names checked against Instagram's Help Center, September 2026):
+
+1. Instagram → **Settings** (app: profile → ☰ menu; computer: **More** → **Settings**).
+2. **Meta Account** (still called **Accounts Center** on some accounts) →
+   **Your information and permissions** → **Export your information**
+   (older versions: *Download your information*) → **Create export**.
+3. Choose your Instagram profile → **Export to device** → **Customize information** →
+   tick only **Followers and following**.
+4. **Date range: All time**, **Format: JSON** (not HTML) → **Start export**.
+5. When Instagram notifies you, download the ZIP from **Available downloads** (kept for 4 days)
+   and drop it into Follow Check. No need to unzip it.
 
 The export contains `connections/followers_and_following/followers_1.json`
 (plus `followers_2.json`, … for large accounts) and `following.json`.

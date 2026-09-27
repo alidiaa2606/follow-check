@@ -2096,7 +2096,7 @@ test('drag and drop: dropping a valid ZIP loads it, identical to the file picker
 
 test('drag and drop: a drop just outside the dashed box still loads the export', async () => {
   const { page, problems } = await openApp();
-  await nativeDrag(page, zipPath, { selector: '.howto', dy: 8 });
+  await nativeDrag(page, zipPath, { selector: '.guide-cta-note', dy: 6 });
   await loadedOrMessage(page);
   assert.deepEqual((await loadedSummary(page)).stats, ['5', '6', '3', '3', '2']);
   assert.deepEqual(problems, []);
@@ -2181,5 +2181,156 @@ test('click-to-upload still works (real file chooser), including after a rejecte
   assert.deepEqual((await loadedSummary(page)).stats, ['5', '6', '3', '3', '2']);
   assert.equal(await page.textContent('#messages'), ''); // old error cleared
   assert.deepEqual(problems, []);
+  await page.close();
+});
+
+// ---------- "How do I get my Instagram export?" guide ----------
+
+const guideText = (page) => page.evaluate(() => document.getElementById('guide').textContent.replace(/\s+/g, ' '));
+
+test('guide: button is on the first screen, next to the drop zone, and opens the guide', async () => {
+  const { page, problems } = await openApp();
+  assert.equal(await page.isVisible('#guide-open'), true);
+  assert.equal((await page.textContent('#guide-open')).trim(), 'How do I get my Instagram export?');
+  // Close to "Drop your Instagram export here", but outside the drop zone (so it can't trigger the picker).
+  const [dz, btn] = await Promise.all([page.locator('#dropzone').boundingBox(), page.locator('#guide-open').boundingBox()]);
+  assert.ok(btn.y > dz.y + dz.height && btn.y - (dz.y + dz.height) < 80, 'button sits just below the drop zone');
+  assert.equal(await page.$('#dropzone #guide-open'), null);
+  assert.equal(await page.isVisible('#guide'), false); // not cluttering the screen until asked
+
+  await page.click('#guide-open');
+  await page.waitForSelector('#guide[open]');
+  assert.equal(await page.textContent('#guide-title'), 'How to get your Instagram export');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'guide-title');
+  assert.equal(await page.isHidden('#file-input') && await page.evaluate(() => document.getElementById('upload').hidden), false); // upload screen unchanged underneath
+  assert.deepEqual(problems, []); // no errors, no network requests
+  await page.close();
+});
+
+test('guide: contains every required step, the JSON warning and the privacy note', async () => {
+  const { page } = await openApp();
+  await page.click('#guide-open');
+  const text = await guideText(page);
+  for (const phrase of [
+    'Open Instagram',
+    'Open Settings',
+    'Meta Account', 'Accounts Center',
+    'Your information and permissions',
+    'Export your information', 'Download your information', 'Create export',
+    'Instagram profile',
+    'Export to device',
+    'Customize information', 'Followers and following',
+    'Date range', 'All time',
+    'Format', 'JSON', 'Not HTML',
+    'Start export',
+    'How long this takes varies', 'notify you',
+    'Available downloads', 'Download',
+    'drag the ZIP onto the upload area', 'click the upload area',
+    'reads it right here, in your browser',
+  ]) assert.ok(text.includes(phrase), `missing: ${phrase}`);
+  // Steps are numbered 1-15 across the four sections.
+  const numbers = await page.$$eval('#guide .guide-steps', (lists) => lists.map((ol) => [ol.start || 1, ol.children.length]));
+  assert.deepEqual(numbers, [[1, 11], [12, 1], [13, 1], [14, 2]]);
+  assert.deepEqual(await page.$$eval('#guide .guide-section', (h) => h.map((e) => e.textContent.trim())),
+    ['1 Ask Instagram for your export', '2 Wait for Instagram', '3 Download the ZIP', '4 Open it in Follow Check']);
+  // Key warnings.
+  assert.equal(await page.textContent('#guide-json strong'), 'Choose JSON, not HTML.');
+  assert.match(await page.getAttribute('#guide-json', 'class'), /\bwarn\b/);
+  assert.ok(text.includes('You only need Followers and following.'));
+  assert.ok(text.includes("Upload the ZIP you receive from Instagram. You don't need to unzip it first."));
+  assert.equal((await page.textContent('#guide-privacy')).trim(),
+    'Your Instagram export stays on your device. Follow Check processes it locally in your browser and does not upload your export to a server.');
+  // No promised preparation time.
+  assert.equal(/\b\d+\s*(minutes?|hours?|days?)\b.*ready|ready in/i.test(text.replace('keeps it there for 4 days', '')), false);
+  // Guide is plain text: no links, images, iframes or scripts that could load anything.
+  assert.equal(await page.$$eval('#guide a, #guide img, #guide iframe, #guide script, #guide video', (els) => els.length), 0);
+  await page.close();
+});
+
+test('guide: closes with Got it, the × button, Esc and a backdrop click', async () => {
+  const { page } = await openApp();
+  const open = async () => { await page.click('#guide-open'); await page.waitForSelector('#guide[open]'); };
+  const isOpen = () => page.evaluate(() => document.getElementById('guide').open);
+
+  await open();
+  await page.click('#guide-close');
+  assert.equal(await isOpen(), false);
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'guide-open'); // focus returns to the button
+
+  await open();
+  await page.click('.guide-x');
+  assert.equal(await isOpen(), false);
+
+  await open();
+  await page.keyboard.press('Escape');
+  assert.equal(await isOpen(), false);
+
+  await open();
+  await page.mouse.click(5, 5); // outside the dialog
+  assert.equal(await isOpen(), false);
+
+  // Keyboard only: Tab to the button and press Enter.
+  await page.focus('#guide-open');
+  await page.keyboard.press('Enter');
+  assert.equal(await isOpen(), true);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.isVisible('#upload'), true);
+  await page.close();
+});
+
+test('guide: mobile layout (light and dark) fits the screen and scrolls', async () => {
+  for (const colorScheme of ['light', 'dark']) {
+    const context = await browser.newContext({ viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true, colorScheme });
+    const page = await context.newPage();
+    await page.goto(APP_URL);
+    const overflow = () => page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    assert.equal(await overflow(), false);
+    await page.tap('#guide-open');
+    await page.waitForSelector('#guide[open]');
+    const layout = await page.evaluate(() => {
+      const g = document.getElementById('guide').getBoundingClientRect();
+      const body = document.querySelector('.guide-body');
+      const close = document.getElementById('guide-close').getBoundingClientRect();
+      return {
+        fits: g.left >= 0 && g.right <= innerWidth && g.top >= 0 && g.bottom <= innerHeight + 1,
+        scrolls: body.scrollHeight > body.clientHeight,
+        closeVisible: close.bottom <= innerHeight && close.height >= 40,
+        noWideContent: [...document.querySelectorAll('#guide *')].every((el) => el.getBoundingClientRect().right <= innerWidth + 1),
+      };
+    });
+    assert.deepEqual(layout, { fits: true, scrolls: true, closeVisible: true, noWideContent: true }, colorScheme);
+    assert.equal(await overflow(), false);
+    await page.tap('#guide-close');
+    assert.equal(await page.evaluate(() => document.getElementById('guide').open), false);
+    await context.close();
+  }
+});
+
+test('guide: click upload and drag-and-drop upload still work (also with the guide open)', async () => {
+  // Click the upload area → real file chooser.
+  let { page } = await openApp();
+  await page.click('#guide-open');
+  await page.click('#guide-close');
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#upload label.btn.primary')]);
+  await chooser.setFiles(zipPath);
+  await page.waitForSelector('#results:not([hidden])');
+  assert.deepEqual((await loadedSummary(page)).stats, ['5', '6', '3', '3', '2']);
+  await page.close();
+
+  // Real native drag and drop.
+  ({ page } = await openApp());
+  await nativeDrag(page, zipPath);
+  await loadedOrMessage(page);
+  assert.deepEqual((await loadedSummary(page)).stats, ['5', '6', '3', '3', '2']);
+  await page.close();
+
+  // Dropping the ZIP while the guide is open closes the guide and loads it.
+  ({ page } = await openApp());
+  await page.click('#guide-open');
+  await page.waitForSelector('#guide[open]');
+  await nativeDrag(page, zipPath, { selector: '#guide-title', dy: 5 });
+  await loadedOrMessage(page);
+  assert.equal(await page.evaluate(() => document.getElementById('guide').open), false);
+  assert.deepEqual((await loadedSummary(page)).stats, ['5', '6', '3', '3', '2']);
   await page.close();
 });

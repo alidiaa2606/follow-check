@@ -48,15 +48,13 @@
       </div>
       <p id="status" class="status" role="status" aria-live="polite"></p>
 
-      <details class="howto">
-        <summary>How do I get my export?</summary>
-        <ol>
-          <li>In Instagram open <strong>Accounts Center &rarr; Your information and permissions &rarr; Export your information</strong> (called <em>Download your information</em> in some versions).</li>
-          <li>Create an export, choose <strong>Some of your information</strong>, and tick only <strong>Followers and following</strong>.</li>
-          <li>Pick <strong>Download to device</strong>, date range <strong>All time</strong>, format <strong>JSON</strong>.</li>
-          <li>When Instagram emails you, download the ZIP and drop it above. No login needed here.</li>
-        </ol>
-      </details>
+      <div class="guide-cta">
+        <button id="guide-open" class="btn guide-open" type="button" aria-haspopup="dialog" aria-controls="guide">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.4M12 16.8h.01"/></svg>
+          How do I get my Instagram export?
+        </button>
+        <span class="guide-cta-note">Simple steps, no technical knowledge needed.</span>
+      </div>
     </section>
 
     <div id="messages" class="messages" aria-live="polite"></div>
@@ -441,6 +439,77 @@
         <button class="btn" value="cancel" id="confirm-cancel" autofocus>Cancel</button>
         <button class="btn primary" value="confirm" id="confirm-ok"></button>
       </div>
+    </form>
+  </dialog>
+
+  <!-- Guide: how to request the Instagram export (text only, no network) -->
+  <dialog id="guide" class="guide" aria-labelledby="guide-title">
+    <div class="guide-head">
+      <h2 id="guide-title" tabindex="-1">How to get your Instagram export</h2>
+      <form method="dialog"><button class="guide-x" value="close" aria-label="Close guide">&times;</button></form>
+    </div>
+    <div class="guide-body">
+      <p class="guide-intro">Instagram lets you download a copy of your information. Follow Check needs only a small part of it:
+        the list of your followers and the accounts you follow. Requesting it takes a few minutes.</p>
+
+      <ul class="guide-keys">
+        <li class="guide-key warn" id="guide-json">
+          <span class="guide-key-icon" aria-hidden="true">!</span>
+          <div><strong>Choose JSON, not HTML.</strong> Follow Check can only read the JSON format.</div>
+        </li>
+        <li class="guide-key">
+          <span class="guide-key-icon" aria-hidden="true">&check;</span>
+          <div><strong>You only need Followers and following.</strong> Untick everything else. A smaller export is ready sooner.</div>
+        </li>
+        <li class="guide-key">
+          <span class="guide-key-icon" aria-hidden="true">&#8595;</span>
+          <div><strong>Upload the ZIP you receive from Instagram.</strong> You don't need to unzip it first.</div>
+        </li>
+      </ul>
+
+      <h3 class="guide-section"><span class="guide-badge">1</span> Ask Instagram for your export</h3>
+      <ol class="guide-steps">
+        <li><strong>Open Instagram</strong>, in the app or at instagram.com on a computer.</li>
+        <li><strong>Open Settings.</strong> In the app: go to your profile and tap the menu <span class="kbd-ish">&#9776;</span> at the top.
+          On a computer: click <strong>More</strong> (bottom left), then <strong>Settings</strong>.</li>
+        <li>Tap <strong>Meta Account</strong>. On some accounts it's still called <strong>Accounts Center</strong>. It's the same place.</li>
+        <li>Tap <strong>Your information and permissions</strong>.</li>
+        <li>Tap <strong>Export your information</strong> (older versions say <strong>Download your information</strong>), then <strong>Create export</strong>.</li>
+        <li>Choose the <strong>Instagram profile</strong> you want to check.</li>
+        <li>Choose <strong>Export to device</strong>.</li>
+        <li>Tap <strong>Customize information</strong>. Untick everything, then tick only <strong>Followers and following</strong>
+          (you'll find it under <em>Connections</em>).</li>
+        <li>Set <strong>Date range</strong> to <strong>All time</strong>.</li>
+        <li class="guide-step-warn">Set <strong>Format</strong> to <strong>JSON</strong>. <span class="guide-flag">Not HTML</span></li>
+        <li>Tap <strong>Start export</strong>. Instagram may ask for your password. That's Instagram checking it's you.</li>
+      </ol>
+
+      <h3 class="guide-section"><span class="guide-badge">2</span> Wait for Instagram</h3>
+      <ol class="guide-steps" start="12">
+        <li>Instagram prepares your file. How long this takes varies. Instagram will notify you (or email you) when it's ready.</li>
+      </ol>
+
+      <h3 class="guide-section"><span class="guide-badge">3</span> Download the ZIP</h3>
+      <ol class="guide-steps" start="13">
+        <li>Go back to <strong>Export your information</strong> and find it under <strong>Available downloads</strong>.
+          Tap <strong>Download</strong>. Instagram keeps it there for 4 days.</li>
+      </ol>
+
+      <h3 class="guide-section"><span class="guide-badge">4</span> Open it in Follow Check</h3>
+      <ol class="guide-steps" start="14">
+        <li>Come back here and <strong>drag the ZIP onto the upload area</strong>, or <strong>click the upload area</strong> and select it.</li>
+        <li>Follow Check reads it right here, in your browser.</li>
+      </ol>
+
+      <p class="guide-privacy" id="guide-privacy">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/></svg>
+        <span>Your Instagram export stays on your device. Follow Check processes it locally in your browser and does not upload your export to a server.</span>
+      </p>
+      <p class="guide-fineprint">Instagram sometimes renames its menus. If something looks slightly different, pick the closest match.
+        Steps checked against Instagram's Help Center in September 2026.</p>
+    </div>
+    <form method="dialog" class="guide-foot">
+      <button class="btn primary" value="close" id="guide-close">Got it</button>
     </form>
   </dialog>
 

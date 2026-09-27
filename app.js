@@ -1375,6 +1375,15 @@
   dropzone.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file-input').click(); }
   });
+  // "How do I get my Instagram export?" guide (plain text in a dialog; no network).
+  $('guide-open').addEventListener('click', () => {
+    $('guide').showModal();
+    $('guide-title').focus();
+  });
+  $('guide').addEventListener('click', (e) => {
+    if (e.target === $('guide')) $('guide').close(); // click on the backdrop
+  });
+
   // Drag and drop. While the upload screen is showing, the whole page accepts a
   // dropped export (so a drop just outside the dashed box isn't silently lost),
   // and the drop zone lights up. The browser is never allowed to open or navigate
@@ -1403,6 +1412,7 @@
     e.preventDefault();
     hideDragging();
     if (!uploadShowing()) return;
+    if ($('guide').open) $('guide').close(); // dropped the ZIP while reading the guide
     handleDrop(e.dataTransfer);
   });
 
@@ -1485,7 +1495,7 @@
     if (e.key === 'Escape') { e.target.value = ''; state.query = ''; render(); }
   });
   document.addEventListener('keydown', (e) => {
-    if ($('confirm').open) return; // the dialog handles its own keys (Esc cancels)
+    if ($('confirm').open || $('guide').open) return; // dialogs handle their own keys (Esc closes)
     if (inSettings()) {
       if (e.key === 'Escape' && !isTypingTarget(e.target)) { e.preventDefault(); closeSettings(); }
       return;
