@@ -2040,3 +2040,146 @@ test('keyboard: Esc leaves the queue even when a checkbox has focus, but not whi
   assert.equal(await page.isVisible('#queue'), true);
   await page.close();
 });
+
+// ---------- Drag and drop (real native drags) ----------
+// Input.dispatchDragEvent sends an OS-style file drag through Chromium's real drag-and-drop
+// code, so the page gets genuine DataTransfer items with FileSystem entries, exactly like
+// dragging a file from Finder / Explorer. (A DataTransfer built in page JS has no entries
+// and would not have caught the original bug.)
+
+async function nativeDrag(page, filePath, { selector = '#dropzone', dy = 40, drop = true } = {}) {
+  const box = await page.locator(selector).boundingBox();
+  const cdp = await page.context().newCDPSession(page);
+  const data = { items: [], files: [filePath], dragOperationsMask: 1 };
+  const at = { x: box.x + 30, y: box.y + dy, data };
+  await cdp.send('Input.dispatchDragEvent', { type: 'dragEnter', ...at });
+  await cdp.send('Input.dispatchDragEvent', { type: 'dragOver', ...at });
+  if (drop) await cdp.send('Input.dispatchDragEvent', { type: 'drop', ...at });
+  return cdp;
+}
+const loadedOrMessage = (page) => page.waitForFunction(
+  () => !document.getElementById('results').hidden || document.querySelector('#messages .message'), null, { timeout: 10000 });
+/** Everything the app derived from an upload, to compare two ways of loading. */
+const loadedSummary = (page) => page.evaluate(() => ({
+  stats: ['followers', 'following', 'nfb', 'mutual', 'fans'].map((k) => document.getElementById(`stat-${k}`).textContent),
+  nfb: [...document.querySelectorAll('#list .row')].map((r) => r.dataset.username),
+  sources: document.getElementById('sources').textContent,
+  dataDate: document.getElementById('data-date').textContent,
+}));
+function tmpFile(name, contents) {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ig-drop-')), name);
+  fs.writeFileSync(file, contents);
+  return file;
+}
+
+test('drag and drop: dropping a valid ZIP loads it, identical to the file picker', async () => {
+  const picked = await openApp();
+  await upload(picked.page, zipPath);
+  const viaPicker = await loadedSummary(picked.page);
+  await picked.page.close();
+
+  const { page, problems } = await openApp();
+  const startUrl = page.url();
+  const cdp = await nativeDrag(page, zipPath, { drop: false });
+  assert.equal(await page.getAttribute('#dropzone', 'class'), 'dropzone dragging'); // visual feedback while over the page
+  const box = await page.locator('#dropzone').boundingBox();
+  await cdp.send('Input.dispatchDragEvent', { type: 'drop', x: box.x + 30, y: box.y + 40, data: { items: [], files: [zipPath], dragOperationsMask: 1 } });
+  await loadedOrMessage(page);
+  assert.equal(await page.isVisible('#results'), true);
+  assert.deepEqual(await loadedSummary(page), viaPicker);
+  assert.deepEqual(viaPicker.stats, ['5', '6', '3', '3', '2']);
+  assert.equal(await page.getAttribute('#dropzone', 'class'), 'dropzone'); // highlight cleared
+  assert.equal(page.url(), startUrl); // the browser didn't open/navigate to the ZIP
+  assert.deepEqual(problems, []); // no errors, no network requests
+  await page.close();
+});
+
+test('drag and drop: a drop just outside the dashed box still loads the export', async () => {
+  const { page, problems } = await openApp();
+  await nativeDrag(page, zipPath, { selector: '.howto', dy: 8 });
+  await loadedOrMessage(page);
+  assert.deepEqual((await loadedSummary(page)).stats, ['5', '6', '3', '3', '2']);
+  assert.deepEqual(problems, []);
+  await page.close();
+});
+
+test('drag and drop: invalid dropped files get the same errors as the file picker', async () => {
+  const halfZip = new JSZip();
+  halfZip.file('connections/followers_and_following/followers_1.json', '[]');
+  const cases = [
+    ['notes.txt', 'hello', /Couldn't find followers_1\.json or following\.json/],
+    ['broken.zip', 'not really a zip', /broken\.zip couldn't be opened as a ZIP file/],
+    ['half.zip', await halfZip.generateAsync({ type: 'nodebuffer' }), /No following file found/],
+  ];
+  for (const [name, contents, expected] of cases) {
+    const file = tmpFile(name, contents);
+    const viaPicker = await openApp();
+    await viaPicker.page.setInputFiles('#file-input', file);
+    await loadedOrMessage(viaPicker.page);
+    const pickerMessage = await viaPicker.page.textContent('#messages');
+    await viaPicker.page.close();
+
+    const { page, problems } = await openApp();
+    await nativeDrag(page, file);
+    await loadedOrMessage(page);
+    assert.equal(await page.isHidden('#results'), true, name);
+    assert.equal(await page.isVisible('#upload'), true, name);
+    const dropMessage = await page.textContent('#messages');
+    assert.match(dropMessage, expected, name);
+    assert.equal(dropMessage, pickerMessage, name);
+    assert.deepEqual(problems, [], name);
+    await page.close();
+  }
+});
+
+test('drag and drop: a dropped folder on a file:// page gives a clear message instead of silence', async () => {
+  // Chromium can't read dropped folders on file:// pages (it can over http/https).
+  const { page, problems } = await openApp();
+  await nativeDrag(page, EXPORT_DIR);
+  await loadedOrMessage(page);
+  assert.match(await page.textContent('#messages'), /couldn't read the dropped folder.*Choose unzipped folder/s);
+  assert.deepEqual(problems, []);
+  await page.close();
+});
+
+test('drag and drop: DataTransfer without FileSystem entries (other browsers) still loads', async () => {
+  const { page } = await openApp();
+  const bytes = [...fs.readFileSync(zipPath)];
+  await page.evaluate((arr) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array(arr)], 'export.zip', { type: 'application/zip' }));
+    document.getElementById('dropzone').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  }, bytes);
+  await loadedOrMessage(page);
+  assert.deepEqual((await loadedSummary(page)).stats, ['5', '6', '3', '3', '2']);
+  await page.close();
+});
+
+test('drag and drop: on other screens a dropped file is ignored and never opened by the browser', async () => {
+  const { page } = await openApp();
+  await upload(page, zipPath);
+  await clickTag(page, 'natgeo', 'keep');
+  const before = await loadedSummary(page);
+  const url = page.url();
+  await nativeDrag(page, zip2Path, { selector: '#list-card' });
+  await page.waitForTimeout(300);
+  assert.equal(page.url(), url);
+  assert.deepEqual(await loadedSummary(page), before); // the newer export was not loaded over the current one
+  assert.equal(await tagOf(page, 'natgeo'), 'keep');
+  await page.close();
+});
+
+test('click-to-upload still works (real file chooser), including after a rejected drop', async () => {
+  const { page, problems } = await openApp();
+  await nativeDrag(page, tmpFile('notes.txt', 'hello'));
+  await loadedOrMessage(page);
+  assert.match(await page.textContent('#messages'), /Couldn't find followers_1\.json/);
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#upload label.btn.primary')]);
+  assert.equal(chooser.isMultiple(), true);
+  await chooser.setFiles(zipPath);
+  await page.waitForSelector('#results:not([hidden])');
+  assert.deepEqual((await loadedSummary(page)).stats, ['5', '6', '3', '3', '2']);
+  assert.equal(await page.textContent('#messages'), ''); // old error cleared
+  assert.deepEqual(problems, []);
+  await page.close();
+});

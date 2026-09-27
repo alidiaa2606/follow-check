@@ -87,12 +87,57 @@
     return out;
   }
 
-  /** Collect files from a drop, including files inside dropped folders. */
-  async function filesFromDrop(dataTransfer) {
-    const items = [...(dataTransfer.items || [])];
-    const entries = items.map((i) => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
-    if (!entries.length) return [...dataTransfer.files];
+  /**
+   * Read a drop. This must run synchronously inside the drop event: the browser
+   * empties DataTransfer items afterwards. Dropped files are taken with
+   * item.getAsFile(), the same File objects the file picker gives. The
+   * FileSystem entry API is used only for dropped folders, which need it to list
+   * their contents (its entry.file() fails for plain files in some browsers,
+   * for example Chromium on file:// pages).
+   */
+  function collectDrop(dataTransfer) {
+    const files = [];
+    const folders = [];
+    const items = [...(dataTransfer.items || [])].filter((i) => i.kind === 'file');
+    if (!items.length) return { files: [...(dataTransfer.files || [])], folders };
+    for (const item of items) {
+      const entry = typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null;
+      if (entry && entry.isDirectory) {
+        folders.push(entry);
+      } else {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    return { files, folders };
+  }
 
+  /** Dropped files and folders → the same loading flow as the file picker. */
+  async function handleDrop(dataTransfer) {
+    const { files, folders } = collectDrop(dataTransfer);
+    if (!files.length && !folders.length) {
+      clearMessages();
+      showMessages(['Nothing to load: drop the ZIP file Instagram gave you (or its unzipped folder).'], 'error');
+      return;
+    }
+    let all = files;
+    if (folders.length) {
+      try {
+        all = files.concat(await filesFromFolders(folders));
+      } catch {
+        clearMessages();
+        showMessages([
+          "This browser couldn't read the dropped folder.",
+          'Use “Choose unzipped folder” instead, or drop the ZIP file itself.',
+        ], 'error');
+        return;
+      }
+    }
+    await handleFiles(all);
+  }
+
+  /** List every file inside dropped folders (with their relative paths). */
+  async function filesFromFolders(folders) {
     const files = [];
     const readAll = (reader) => new Promise((resolve, reject) => {
       const all = [];
@@ -112,7 +157,7 @@
         for (const child of await readAll(entry.createReader())) await walk(child);
       }
     }
-    for (const entry of entries) await walk(entry);
+    for (const folder of folders) await walk(folder);
     return files;
   }
 
@@ -1330,19 +1375,36 @@
   dropzone.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file-input').click(); }
   });
-  ['dragenter', 'dragover'].forEach((type) => dropzone.addEventListener(type, (e) => {
-    e.preventDefault();
+  // Drag and drop. While the upload screen is showing, the whole page accepts a
+  // dropped export (so a drop just outside the dashed box isn't silently lost),
+  // and the drop zone lights up. The browser is never allowed to open or navigate
+  // to a dropped file, on any screen.
+  const uploadShowing = () => !$('upload').hidden;
+  const draggingFiles = (e) => Boolean(e.dataTransfer) && [...(e.dataTransfer.types || [])].includes('Files');
+  let dragTimer = null;
+  function showDragging() {
     dropzone.classList.add('dragging');
-  }));
-  ['dragleave', 'dragend'].forEach((type) => dropzone.addEventListener(type, () => dropzone.classList.remove('dragging')));
-  dropzone.addEventListener('drop', async (e) => {
-    e.preventDefault();
+    clearTimeout(dragTimer);
+    // dragover repeats while the pointer is over the page; when it stops, the drag has left.
+    dragTimer = setTimeout(() => dropzone.classList.remove('dragging'), 400);
+  }
+  function hideDragging() {
+    clearTimeout(dragTimer);
     dropzone.classList.remove('dragging');
-    handleFiles(await filesFromDrop(e.dataTransfer));
+  }
+  ['dragenter', 'dragover'].forEach((type) => window.addEventListener(type, (e) => {
+    e.preventDefault();
+    if (!draggingFiles(e)) return;
+    const accept = uploadShowing();
+    e.dataTransfer.dropEffect = accept ? 'copy' : 'none';
+    if (accept) showDragging();
+  }));
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    hideDragging();
+    if (!uploadShowing()) return;
+    handleDrop(e.dataTransfer);
   });
-  // Stop the browser from opening a file dropped outside the drop zone.
-  window.addEventListener('dragover', (e) => e.preventDefault());
-  window.addEventListener('drop', (e) => e.preventDefault());
 
   for (const el of document.querySelectorAll('[data-tab]')) {
     el.addEventListener('click', () => setTab(el.dataset.tab));
