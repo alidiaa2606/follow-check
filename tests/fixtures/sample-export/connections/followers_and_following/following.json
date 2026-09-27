@@ -1,0 +1,10 @@
+{
+  "relationships_following": [
+    {"title": "alice", "string_list_data": [{"href": "https://www.instagram.com/_u/alice", "timestamp": 1690000001}]},
+    {"title": "Bob.Smith", "string_list_data": [{"href": "https://www.instagram.com/_u/bob.smith", "timestamp": 1690000002}]},
+    {"title": "dave", "string_list_data": [{"href": "https://www.instagram.com/_u/dave", "timestamp": 1690000003}]},
+    {"title": "natgeo", "string_list_data": [{"href": "https://www.instagram.com/_u/natgeo", "timestamp": 1690000004}]},
+    {"title": "old_friend", "string_list_data": [{"href": "https://www.instagram.com/_u/old_friend", "timestamp": 1690000005}]},
+    {"title": "", "string_list_data": [{"href": "https://www.instagram.com/_u/href.only", "timestamp": 1690000006}]}
+  ]
+}
