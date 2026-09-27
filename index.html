@@ -106,10 +106,12 @@
               <input id="search" type="search" placeholder="Search usernames  ( / )" autocomplete="off" spellcheck="false" aria-label="Search usernames">
             </label>
             <select id="sort" aria-label="Sort">
-              <option value="az">A &rarr; Z</option>
-              <option value="za">Z &rarr; A</option>
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
+              <option value="az">Username A&ndash;Z</option>
+              <option value="za">Username Z&ndash;A</option>
+              <option value="newest">Followed: newest first</option>
+              <option value="oldest">Followed: oldest first</option>
+              <option value="unreviewed">Unreviewed first</option>
+              <option value="reviewed">Reviewed first</option>
             </select>
           </div>
           <div class="filters" id="filters" role="group" aria-label="Filter by tag">
@@ -119,6 +121,20 @@
             <button type="button" data-filter="ignore"><span class="dot ignore"></span>Ignore <span class="count" data-filter-count="ignore"></span></button>
             <button type="button" data-filter="unavailable"><span class="dot unavailable"></span>Unavailable <span class="count" data-filter-count="unavailable"></span></button>
           </div>
+        </div>
+        <div class="bulk-bar" id="bulk-bar" role="region" aria-label="Select accounts and apply a tag to all of them">
+          <div class="bulk-select">
+            <button id="select-visible" class="btn small" type="button">Select all visible</button>
+            <button id="select-none" class="btn small" type="button">Deselect all</button>
+            <span class="selected-count" id="selected-count" aria-live="polite">0 selected</span>
+          </div>
+          <div class="bulk-actions" role="group" aria-label="Bulk actions for selected accounts">
+            <button class="btn small bulk keep" type="button" data-bulk="keep">Mark Keep</button>
+            <button class="btn small bulk ignore" type="button" data-bulk="ignore">Mark Ignore</button>
+            <button class="btn small bulk unavailable" type="button" data-bulk="unavailable">Mark Unavailable</button>
+            <button class="btn small bulk" type="button" data-bulk="clear">Clear tags</button>
+          </div>
+          <p class="bulk-note" id="bulk-note" hidden></p>
         </div>
         <p id="storage-warning" class="storage-warning" hidden>This browser isn't allowing the app to save data, so your tags will be lost when you close the tab.</p>
         <p id="list-summary" class="list-summary"></p>
@@ -190,6 +206,18 @@
       <p class="rv-note">Opening a profile is a normal link to instagram.com in a new tab. The app never checks accounts itself.</p>
     </section>
   </main>
+
+  <dialog id="confirm" class="confirm" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <h2 id="confirm-title"></h2>
+      <p id="confirm-detail"></p>
+      <p id="confirm-hidden" class="confirm-hidden" hidden></p>
+      <div class="confirm-actions">
+        <button class="btn" value="cancel" id="confirm-cancel" autofocus>Cancel</button>
+        <button class="btn primary" value="confirm" id="confirm-ok"></button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden>
     <span id="toast-text"></span>

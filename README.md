@@ -33,6 +33,18 @@ Tags belong to the browser *and* to how you open the app: `file://` and
 `http://localhost:8000` keep separate tags, so pick one way and stick to it.
 Clearing site data for the page deletes the tags.
 
+## Bulk actions
+In **Not following back**, tick the checkbox beside accounts, or use **Select all
+visible** (only the rows currently on screen after search, filter and paging;
+never hidden ones). Then **Mark Keep / Mark Ignore / Mark Unavailable / Clear
+tags**. Every bulk action asks first ("Mark 47 accounts as Ignore?") and changes
+nothing until you confirm; Cancel is the default button. If some selected accounts
+are hidden by the current search or filter, the selection bar and the confirmation
+say so. After applying, Undo in the toast restores the previous tags.
+
+Sort options: Username A–Z / Z–A, Followed newest / oldest first, Unreviewed first,
+Reviewed first. They combine with search and the tag filters.
+
 ## Review Mode
 Press **Start review** (or **Resume review**) above the list to go through the
 unreviewed "Not following back" accounts one at a time, A to Z. Each choice moves

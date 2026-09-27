@@ -43,6 +43,9 @@
     query: '',
     sort: 'az',
     limit: PAGE_SIZE,
+    selected: new Set(), // usernames ticked in "not following back" (kept across search/filter changes)
+    shown: [], // usernames of the rows currently on screen
+    matchCount: 0, // rows matching the current search/filter (may exceed shown when paged)
   };
 
   // ---------- Reading files ----------
@@ -178,6 +181,7 @@
     $('reset').hidden = false;
     state.query = '';
     $('search').value = '';
+    state.selected.clear();
     review = IGReview.createReviewSession({
       order: notFollowingBack.map((e) => e.username),
       tags,
@@ -227,6 +231,9 @@
       case 'za': return [...list].reverse();
       case 'newest': return [...list].sort((a, b) => (ts(b) ?? -Infinity) - (ts(a) ?? -Infinity));
       case 'oldest': return [...list].sort((a, b) => (ts(a) ?? Infinity) - (ts(b) ?? Infinity));
+      // Lists are A→Z and sort() is stable, so each group stays A→Z.
+      case 'unreviewed': return [...list].sort((a, b) => Boolean(tags.get(a.username)) - Boolean(tags.get(b.username)));
+      case 'reviewed': return [...list].sort((a, b) => Boolean(tags.get(b.username)) - Boolean(tags.get(a.username)));
       default: return list; // lists are already A→Z
     }
   }
@@ -241,6 +248,8 @@
     const q = normalizeQuery(state.query);
     const matches = sorted(q ? base.filter((e) => e.username.includes(q)) : base);
     const shown = matches.slice(0, state.limit);
+    state.shown = shown.map((e) => e.username);
+    state.matchCount = matches.length;
 
     $('filters').hidden = !taggable();
     for (const el of document.querySelectorAll('#filters [data-filter]')) {
@@ -267,6 +276,8 @@
       ? `${fmt(matches.length)} of ${noun(base.length)} match “${state.query.trim()}”${filterLabel}`
       : `${noun(base.length)}${filterLabel}`;
 
+    updateSelectionUI();
+
     const remaining = matches.length - shown.length;
     $('more').hidden = remaining <= 0;
     $('more').textContent = `Show ${fmt(Math.min(remaining, PAGE_SIZE))} more (${fmt(remaining)} left)`;
@@ -278,6 +289,15 @@
     li.className = 'row' + (tag ? ` tagged-${tag}` : '');
     li.dataset.username = entry.username;
     if (tag) li.dataset.tag = tag;
+    if (taggable()) {
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.className = 'select';
+      box.checked = state.selected.has(entry.username);
+      box.setAttribute('aria-label', `Select @${entry.username}`);
+      li.classList.toggle('selected', box.checked);
+      li.appendChild(box);
+    }
 
     const avatar = document.createElement('span');
     avatar.className = 'avatar';
@@ -359,6 +379,94 @@
     const mark = document.createElement('mark');
     mark.textContent = name.slice(i, i + q.length);
     return [name.slice(0, i), mark, name.slice(i + q.length)];
+  }
+
+  // ---------- Selection and bulk actions ----------
+
+  const plural = (n, word) => `${fmt(n)} ${word}${n === 1 ? '' : 's'}`;
+
+  function updateSelectionUI() {
+    $('bulk-bar').hidden = !taggable();
+    if (!taggable()) return;
+    const count = state.selected.size;
+    const onScreen = new Set(state.shown);
+    const hidden = [...state.selected].filter((u) => !onScreen.has(u)).length;
+    const allShownSelected = state.shown.length > 0 && state.shown.every((u) => state.selected.has(u));
+
+    $('selected-count').textContent = `${fmt(count)} selected` + (hidden ? ` · ${fmt(hidden)} not visible` : '');
+    $('select-visible').textContent = `Select all visible (${fmt(state.shown.length)})`;
+    $('select-visible').disabled = !state.shown.length || allShownSelected;
+    $('select-none').disabled = count === 0;
+    for (const b of document.querySelectorAll('[data-bulk]')) b.disabled = count === 0;
+
+    const notes = [];
+    if (hidden) {
+      notes.push(`${plural(hidden, 'selected account')} ${hidden === 1 ? "isn't" : "aren't"} visible with the current search or filter. ` +
+        `${hidden === 1 ? 'It is' : 'They are'} still selected and will be included in a bulk action.`);
+    }
+    if (state.matchCount > state.shown.length) {
+      notes.push(`“Select all visible” only selects the ${fmt(state.shown.length)} accounts on screen. Use “Show more” to include more.`);
+    }
+    $('bulk-note').textContent = notes.join(' ');
+    $('bulk-note').hidden = !notes.length;
+  }
+
+  function toggleSelected(username, on) {
+    if (on) state.selected.add(username);
+    else state.selected.delete(username);
+    const row = $('list').querySelector(`.row[data-username="${username}"]`);
+    if (row) row.classList.toggle('selected', on);
+    updateSelectionUI();
+  }
+
+  /** Ask before changing anything. Resolves true only if the user presses the confirm button. */
+  function confirmDialog({ title, detail, hiddenNote, okLabel }) {
+    const dialog = $('confirm');
+    $('confirm-title').textContent = title;
+    $('confirm-detail').textContent = detail;
+    $('confirm-hidden').textContent = hiddenNote || '';
+    $('confirm-hidden').hidden = !hiddenNote;
+    $('confirm-ok').textContent = okLabel;
+    dialog.returnValue = '';
+    return new Promise((resolve) => {
+      dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true });
+      dialog.showModal();
+    });
+  }
+
+  async function bulkApply(action) {
+    const usernames = [...state.selected];
+    if (!usernames.length) return;
+    const tag = action === 'clear' ? null : action;
+    const noun = plural(usernames.length, 'account');
+    const c = tags.counts(usernames.map((username) => ({ username })));
+    const current = [
+      c.unreviewed && `${fmt(c.unreviewed)} unreviewed`,
+      c.keep && `${fmt(c.keep)} Keep`,
+      c.ignore && `${fmt(c.ignore)} Ignore`,
+      c.unavailable && `${fmt(c.unavailable)} Unavailable`,
+    ].filter(Boolean).join(', ');
+    const onScreen = new Set(state.shown);
+    const hidden = usernames.filter((u) => !onScreen.has(u)).length;
+
+    const ok = await confirmDialog({
+      title: tag ? `Mark ${noun} as ${TAG_LABELS[tag]}?` : `Clear tags from ${noun}?`,
+      detail: `Right now: ${current}. Nothing changes until you confirm.`,
+      hiddenNote: hidden ? `${fmt(hidden)} of these accounts ${hidden === 1 ? 'is' : 'are'} selected but not visible with the current search or filter.` : '',
+      okLabel: tag ? `Mark ${noun} as ${TAG_LABELS[tag]}` : `Clear tags from ${noun}`,
+    });
+    if (!ok) return;
+
+    const previous = usernames.map((u) => [u, tags.get(u)]);
+    tags.setMany(usernames.map((u) => [u, tag]));
+    state.selected.clear();
+    updateTagCounts();
+    render();
+    showToast(tag ? `Marked ${noun} as ${TAG_LABELS[tag]}` : `Cleared tags from ${noun}`, () => {
+      tags.setMany(previous);
+      updateTagCounts();
+      render();
+    });
   }
 
   // ---------- Review Mode ----------
@@ -524,6 +632,7 @@
 
   function reset() {
     state.lists = null;
+    state.selected.clear();
     $('list').replaceChildren();
     $('results').hidden = true;
     $('review').hidden = true;
@@ -569,6 +678,21 @@
   for (const el of document.querySelectorAll('#filters [data-filter]')) {
     el.addEventListener('click', () => setFilter(el.dataset.filter));
   }
+  $('list').addEventListener('change', (e) => {
+    if (!e.target.classList.contains('select')) return;
+    toggleSelected(e.target.closest('.row').dataset.username, e.target.checked);
+  });
+  $('select-visible').addEventListener('click', () => {
+    for (const u of state.shown) state.selected.add(u);
+    render();
+  });
+  $('select-none').addEventListener('click', () => {
+    state.selected.clear();
+    render();
+  });
+  for (const b of document.querySelectorAll('[data-bulk]')) {
+    b.addEventListener('click', () => bulkApply(b.dataset.bulk));
+  }
   $('list').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-set-tag]');
     if (!btn) return;
@@ -599,6 +723,7 @@
     if (e.key === 'Escape') { e.target.value = ''; state.query = ''; render(); }
   });
   document.addEventListener('keydown', (e) => {
+    if ($('confirm').open) return; // the dialog handles its own keys (Esc cancels)
     if (inReview()) return onReviewKey(e);
     if (e.key === '/' && state.lists && document.activeElement !== $('search')) {
       e.preventDefault();

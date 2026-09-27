@@ -662,3 +662,324 @@ test('review mode on mobile and in dark mode', async () => {
     await context.close();
   }
 });
+
+// ---------- Step 4: checkboxes, bulk actions, sorting ----------
+
+// Fake export: 8 accounts don't follow back (follow dates not in name order), 1 mutual.
+const BULK_NFB = ['ann', 'bea', 'cal', 'dee', 'eli', 'fay', 'gus', 'hal'];
+const BULK_DATES = { ann: 5, bea: 2, cal: 8, dee: 1, eli: 7, fay: 3, gus: 6, hal: 4 }; // days
+async function uploadBulkExport(page) {
+  const following = [...BULK_NFB, 'mia'].map((u) => ({ title: u, string_list_data: [{ timestamp: 1700000000 + (BULK_DATES[u] || 0) * 86400 }] }));
+  await page.setInputFiles('#file-input', [
+    { name: 'followers_1.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify([{ string_list_data: [{ value: 'mia' }] }])) },
+    { name: 'following.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ relationships_following: following })) },
+  ]);
+  await page.waitForSelector('#results:not([hidden])');
+}
+const check = (page, u) => page.check(`#list .row[data-username="${u}"] input.select`);
+const uncheck = (page, u) => page.uncheck(`#list .row[data-username="${u}"] input.select`);
+const selectedRows = (page) => page.$$eval('#list .row input.select:checked', (els) => els.map((e) => e.closest('.row').dataset.username));
+/** Read every tag straight from the saved data, so hidden rows are checked too. */
+const savedTags = (page) => page.evaluate(() => {
+  const data = JSON.parse(localStorage.getItem('followcheck.tags.v1') || '{"tags":{}}');
+  return Object.fromEntries(Object.entries(data.tags).map(([u, v]) => [u, v.tag]));
+});
+async function bulk(page, action) {
+  await page.click(`[data-bulk=${action}]`);
+  await page.waitForSelector('#confirm[open]');
+}
+/** Press the confirm button and wait until the bulk change has been applied (its toast appears). */
+async function confirmOk(page) {
+  await page.evaluate(() => { document.getElementById('toast').hidden = true; });
+  await page.click('#confirm-ok');
+  await page.waitForSelector('#toast:not([hidden])');
+}
+/** After cancelling, give the page time to (wrongly) apply anything before checking nothing changed. */
+const settle = (page) => page.waitForTimeout(150);
+
+test('bulk: individual checkbox selection', async () => {
+  const { page, problems } = await openApp();
+  await uploadBulkExport(page);
+  assert.equal(await page.textContent('#selected-count'), '0 selected');
+  for (const action of ['keep', 'ignore', 'unavailable', 'clear']) assert.equal(await page.isDisabled(`[data-bulk=${action}]`), true);
+
+  await check(page, 'ann');
+  await check(page, 'cal');
+  assert.equal(await page.textContent('#selected-count'), '2 selected');
+  assert.deepEqual(await selectedRows(page), ['ann', 'cal']);
+  assert.equal(await page.getAttribute('.row[data-username=cal]', 'class'), 'row selected');
+  assert.equal(await page.isEnabled('[data-bulk=keep]'), true);
+  await uncheck(page, 'cal');
+  assert.equal(await page.textContent('#selected-count'), '1 selected');
+  assert.equal(await page.getAttribute('.row[data-username=cal]', 'class'), 'row');
+  // Checkboxes only in "Not following back".
+  await page.click('#tabs [data-tab=following]');
+  assert.equal(await page.$('#list input.select'), null);
+  assert.equal(await page.isHidden('#bulk-bar'), true);
+  await page.click('#tabs [data-tab=notFollowingBack]');
+  assert.deepEqual(await selectedRows(page), ['ann']); // selection kept
+  assert.deepEqual(problems, []);
+  await page.close();
+});
+
+test('bulk: select all visible and deselect all', async () => {
+  const { page } = await openApp();
+  await uploadBulkExport(page);
+  assert.equal(await page.textContent('#select-visible'), 'Select all visible (8)');
+  assert.equal(await page.isDisabled('#select-none'), true);
+  await page.click('#select-visible');
+  assert.deepEqual(await selectedRows(page), BULK_NFB);
+  assert.equal(await page.textContent('#selected-count'), '8 selected');
+  assert.equal(await page.isDisabled('#select-visible'), true); // everything visible is already selected
+  await page.click('#select-none');
+  assert.deepEqual(await selectedRows(page), []);
+  assert.equal(await page.textContent('#selected-count'), '0 selected');
+  assert.deepEqual(await savedTags(page), {}); // selecting never tags
+  await page.close();
+});
+
+test('bulk: selection + search selects only matching accounts', async () => {
+  const { page } = await openApp();
+  await uploadBulkExport(page);
+  await page.fill('#search', 'a'); // ann, bea, cal, fay, hal
+  assert.equal(await page.textContent('#select-visible'), 'Select all visible (5)');
+  await page.click('#select-visible');
+  assert.equal(await page.textContent('#selected-count'), '5 selected');
+  await page.fill('#search', '');
+  assert.deepEqual(await selectedRows(page), ['ann', 'bea', 'cal', 'fay', 'hal']);
+  await bulk(page, 'ignore');
+  assert.equal(await page.textContent('#confirm-title'), 'Mark 5 accounts as Ignore?');
+  await confirmOk(page);
+  assert.deepEqual(await savedTags(page), { ann: 'ignore', bea: 'ignore', cal: 'ignore', fay: 'ignore', hal: 'ignore' });
+  await page.close();
+});
+
+test('bulk: selection + tag filters', async () => {
+  const { page } = await openApp();
+  await uploadBulkExport(page);
+  await clickTag(page, 'dee', 'keep');
+  await clickTag(page, 'gus', 'keep');
+  await page.click('#filters [data-filter=keep]');
+  assert.equal(await page.textContent('#select-visible'), 'Select all visible (2)');
+  await page.click('#select-visible');
+  await bulk(page, 'unavailable');
+  assert.equal(await page.textContent('#confirm-title'), 'Mark 2 accounts as Unavailable?');
+  assert.match(await page.textContent('#confirm-detail'), /Right now: 2 Keep\./);
+  await confirmOk(page);
+  assert.deepEqual(await savedTags(page), { dee: 'unavailable', gus: 'unavailable' });
+  assert.deepEqual(await listed(page), []); // they left the Keep filter
+  await page.click('#filters [data-filter=unreviewed]');
+  await page.click('#select-visible');
+  assert.equal(await page.textContent('#selected-count'), '6 selected');
+  await page.close();
+});
+
+test('bulk: sorting (all options) works with search, filters and selection', async () => {
+  const { page } = await openApp();
+  await uploadBulkExport(page);
+  const options = await page.$$eval('#sort option', (os) => os.map((o) => [o.value, o.textContent]));
+  assert.deepEqual(options, [
+    ['az', 'Username A–Z'], ['za', 'Username Z–A'], ['newest', 'Followed: newest first'],
+    ['oldest', 'Followed: oldest first'], ['unreviewed', 'Unreviewed first'], ['reviewed', 'Reviewed first'],
+  ]);
+  await clickTag(page, 'eli', 'keep');
+  await clickTag(page, 'bea', 'ignore');
+
+  await page.selectOption('#sort', 'za');
+  assert.deepEqual(await listed(page), [...BULK_NFB].reverse());
+  await page.selectOption('#sort', 'newest');
+  assert.deepEqual(await listed(page), ['cal', 'eli', 'gus', 'ann', 'hal', 'fay', 'bea', 'dee']);
+  await page.selectOption('#sort', 'oldest');
+  assert.deepEqual(await listed(page), ['dee', 'bea', 'fay', 'hal', 'ann', 'gus', 'eli', 'cal']);
+  await page.selectOption('#sort', 'unreviewed');
+  assert.deepEqual(await listed(page), ['ann', 'cal', 'dee', 'fay', 'gus', 'hal', 'bea', 'eli']);
+  await page.selectOption('#sort', 'reviewed');
+  assert.deepEqual(await listed(page), ['bea', 'eli', 'ann', 'cal', 'dee', 'fay', 'gus', 'hal']);
+
+  // Sort + search + filter together.
+  await page.selectOption('#sort', 'newest');
+  await page.click('#filters [data-filter=unreviewed]');
+  await page.fill('#search', 'a'); // unreviewed containing "a": ann, cal, fay, hal
+  assert.deepEqual(await listed(page), ['cal', 'ann', 'hal', 'fay']);
+
+  // Selecting in a sorted view picks the right accounts.
+  await check(page, 'hal');
+  await page.click('#select-visible');
+  assert.deepEqual((await selectedRows(page)).sort(), ['ann', 'cal', 'fay', 'hal']);
+  await bulk(page, 'keep');
+  await confirmOk(page);
+  assert.deepEqual(await savedTags(page), { ann: 'keep', bea: 'ignore', cal: 'keep', eli: 'keep', fay: 'keep', hal: 'keep' });
+  await page.close();
+});
+
+test('bulk: Keep, Ignore, Unavailable and Clear, each confirmed, with undo', async () => {
+  const { page, problems } = await openApp();
+  await uploadBulkExport(page);
+  for (const u of ['ann', 'bea', 'cal']) await check(page, u);
+
+  await bulk(page, 'keep');
+  assert.equal(await page.textContent('#confirm-title'), 'Mark 3 accounts as Keep?');
+  assert.equal(await page.textContent('#confirm-detail'), 'Right now: 3 unreviewed. Nothing changes until you confirm.');
+  assert.equal(await page.textContent('#confirm-ok'), 'Mark 3 accounts as Keep');
+  assert.deepEqual(await savedTags(page), {}); // nothing yet while the dialog is open
+  await confirmOk(page);
+  assert.deepEqual(await savedTags(page), { ann: 'keep', bea: 'keep', cal: 'keep' });
+  assert.equal(await page.textContent('#toast-text'), 'Marked 3 accounts as Keep');
+  assert.equal(await page.textContent('#selected-count'), '0 selected'); // selection cleared after applying
+  assert.deepEqual(await filterCounts(page), { all: 8, unreviewed: 5, keep: 3, ignore: 0, unavailable: 0 });
+
+  for (const u of ['ann', 'bea', 'cal', 'dee']) await check(page, u);
+  await bulk(page, 'ignore');
+  assert.equal(await page.textContent('#confirm-title'), 'Mark 4 accounts as Ignore?');
+  assert.match(await page.textContent('#confirm-detail'), /Right now: 1 unreviewed, 3 Keep\./);
+  await confirmOk(page);
+  assert.deepEqual(await savedTags(page), { ann: 'ignore', bea: 'ignore', cal: 'ignore', dee: 'ignore' });
+
+  await check(page, 'ann');
+  await check(page, 'eli');
+  await bulk(page, 'unavailable');
+  assert.equal(await page.textContent('#confirm-title'), 'Mark 2 accounts as Unavailable?');
+  await confirmOk(page);
+  assert.deepEqual(await savedTags(page), { ann: 'unavailable', bea: 'ignore', cal: 'ignore', dee: 'ignore', eli: 'unavailable' });
+
+  await page.click('#select-visible');
+  await bulk(page, 'clear');
+  assert.equal(await page.textContent('#confirm-title'), 'Clear tags from 8 accounts?');
+  assert.match(await page.textContent('#confirm-detail'), /3 unreviewed, 3 Ignore, 2 Unavailable/);
+  await confirmOk(page);
+  assert.deepEqual(await savedTags(page), {});
+  assert.equal(await page.textContent('#toast-text'), 'Cleared tags from 8 accounts');
+
+  // Undo the clear: every previous tag comes back.
+  await page.click('#toast-undo');
+  assert.deepEqual(await savedTags(page), { ann: 'unavailable', bea: 'ignore', cal: 'ignore', dee: 'ignore', eli: 'unavailable' });
+
+  // Bulk results survive a reload.
+  await page.reload();
+  await uploadBulkExport(page);
+  assert.equal(await tagOf(page, 'eli'), 'unavailable');
+  assert.deepEqual(problems, []);
+  await page.close();
+});
+
+test('bulk: cancelling the confirmation changes nothing (button and Esc)', async () => {
+  const { page } = await openApp();
+  await uploadBulkExport(page);
+  await clickTag(page, 'hal', 'keep');
+  for (const u of ['ann', 'bea', 'hal']) await check(page, u);
+
+  await bulk(page, 'ignore');
+  await page.click('#confirm-cancel');
+  await settle(page);
+  assert.equal(await page.isVisible('#confirm'), false);
+  assert.deepEqual(await savedTags(page), { hal: 'keep' });
+  assert.deepEqual(await selectedRows(page), ['ann', 'bea', 'hal']); // selection kept so you can try again
+
+  await bulk(page, 'clear');
+  await page.keyboard.press('Escape');
+  await settle(page);
+  assert.equal(await page.isVisible('#confirm'), false);
+  assert.deepEqual(await savedTags(page), { hal: 'keep' });
+
+  // Cancel is focused by default, so Enter cancels too.
+  await bulk(page, 'unavailable');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'confirm-cancel');
+  await page.keyboard.press('Enter');
+  await settle(page);
+  assert.equal(await page.isVisible('#confirm'), false);
+  assert.deepEqual(await savedTags(page), { hal: 'keep' });
+  await page.reload();
+  await uploadBulkExport(page);
+  assert.deepEqual(await savedTags(page), { hal: 'keep' });
+  await page.close();
+});
+
+test('bulk: hidden or filtered-out accounts are never changed unless explicitly selected', async () => {
+  const { page } = await openApp();
+  await uploadBulkExport(page);
+  await check(page, 'ann'); // explicitly selected, then hidden by a search
+  await page.fill('#search', 'dee');
+  assert.equal(await page.textContent('#selected-count'), '1 selected · 1 not visible');
+  assert.match(await page.textContent('#bulk-note'), /1 selected account isn't visible with the current search or filter/);
+  await page.click('#select-visible'); // adds only dee
+  assert.equal(await page.textContent('#selected-count'), '2 selected · 1 not visible');
+  await bulk(page, 'keep');
+  assert.equal(await page.textContent('#confirm-title'), 'Mark 2 accounts as Keep?');
+  assert.equal(await page.textContent('#confirm-hidden'), '1 of these accounts is selected but not visible with the current search or filter.');
+  await confirmOk(page);
+  assert.deepEqual(await savedTags(page), { ann: 'keep', dee: 'keep' }); // the other 6 hidden accounts untouched
+  await page.close();
+});
+
+test('bulk: "select all visible" with a long list only selects the rows on screen', async () => {
+  const { page } = await openApp();
+  const N = 450;
+  const following = Array.from({ length: N }, (_, i) => ({ title: `acct${String(i).padStart(3, '0')}`, string_list_data: [{ timestamp: 1600000000 + i }] }));
+  await page.setInputFiles('#file-input', [
+    { name: 'followers_1.json', mimeType: 'application/json', buffer: Buffer.from('[]') },
+    { name: 'following.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ relationships_following: following })) },
+  ]);
+  await page.waitForSelector('#results:not([hidden])');
+  assert.equal(await page.textContent('#select-visible'), 'Select all visible (200)');
+  assert.match(await page.textContent('#bulk-note'), /only selects the 200 accounts on screen/);
+  await page.click('#select-visible');
+  await bulk(page, 'ignore');
+  assert.equal(await page.textContent('#confirm-title'), 'Mark 200 accounts as Ignore?');
+  await confirmOk(page);
+  const tagsNow = await savedTags(page);
+  assert.equal(Object.keys(tagsNow).length, 200);
+  assert.ok(Object.keys(tagsNow).every((u) => u < 'acct200'));
+  assert.deepEqual(await filterCounts(page), { all: 450, unreviewed: 250, keep: 0, ignore: 200, unavailable: 0 });
+  await page.close();
+});
+
+test('bulk: Review Mode still works after bulk changes', async () => {
+  const { page } = await openApp();
+  await uploadBulkExport(page);
+  for (const u of ['ann', 'bea', 'cal']) await check(page, u);
+  await bulk(page, 'keep');
+  await confirmOk(page);
+  await page.click('#review-start');
+  assert.equal(await rvUser(page), '@dee'); // bulk-tagged accounts are out of the queue
+  assert.deepEqual(await rvProgress(page), { total: 8, reviewed: 3, remaining: 5, keep: 3, ignore: 0, unavailable: 0 });
+  await page.keyboard.press('i');
+  assert.equal(await rvUser(page), '@eli');
+  await page.keyboard.press('Escape');
+  assert.equal(await tagOf(page, 'dee'), 'ignore');
+  await page.close();
+});
+
+test('bulk: desktop, mobile and dark mode layouts', async () => {
+  const setups = [
+    { viewport: { width: 1100, height: 900 } },
+    { viewport: { width: 1100, height: 900 }, colorScheme: 'dark' },
+    { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
+    { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, colorScheme: 'dark' },
+  ];
+  for (const opts of setups) {
+    const context = await browser.newContext({ locale: 'en-US', timezoneId: 'UTC', ...opts });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(APP_URL);
+    await uploadBulkExport(page);
+    await check(page, 'ann');
+    await check(page, 'bea');
+    await bulk(page, 'ignore');
+    const layout = await page.evaluate(() => {
+      const r = document.getElementById('confirm').getBoundingClientRect();
+      const inside = (el) => { const b = el.getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth; };
+      return {
+        overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        dialogFits: r.left >= 0 && r.right <= innerWidth,
+        bulkButtonsFit: [...document.querySelectorAll('[data-bulk]')].every(inside),
+        checkboxesFit: [...document.querySelectorAll('#list input.select')].every(inside),
+      };
+    });
+    assert.deepEqual(layout, { overflow: false, dialogFits: true, bulkButtonsFit: true, checkboxesFit: true }, JSON.stringify(opts));
+    await confirmOk(page);
+    assert.deepEqual(await savedTags(page), { ann: 'ignore', bea: 'ignore' });
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+});

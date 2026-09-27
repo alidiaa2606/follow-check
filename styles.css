@@ -329,3 +329,36 @@ kbd {
 @media (hover: none) and (pointer: coarse) {
   .rv-shortcuts, .rv-card kbd, #rv-exit kbd { display: none; }
 }
+
+/* ---------- Selection and bulk actions ---------- */
+.btn.small { font-size: 13px; padding: 6px 12px; border-radius: 8px; }
+.bulk-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.bulk-select, .bulk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.selected-count { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; margin-left: 4px; }
+.bulk.keep:not(:disabled) { color: var(--keep); border-color: var(--keep); }
+.bulk.ignore:not(:disabled) { color: var(--ignore); border-color: var(--ignore); }
+.bulk.unavailable:not(:disabled) { color: var(--unavail); border-color: var(--unavail); }
+.bulk-note { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--warn-text); }
+.row input.select { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--text); cursor: pointer; }
+.row.selected { background: var(--note-bg); }
+
+.confirm {
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; width: min(420px, calc(100% - 32px));
+  background: var(--surface); color: var(--text); box-shadow: 0 16px 48px rgba(0, 0, 0, .25);
+}
+.confirm::backdrop { background: rgba(10, 12, 16, .45); }
+.confirm h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: -.01em; }
+.confirm p { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
+.confirm-hidden { color: var(--warn-text) !important; background: var(--warn-bg); padding: 8px 10px; border-radius: 8px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+
+@media (max-width: 600px) {
+  .bulk-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .bulk-actions .btn { padding: 9px 6px; }
+  .row input.select { width: 22px; height: 22px; }
+  .confirm-actions { flex-direction: column-reverse; }
+  .confirm-actions .btn { width: 100%; padding: 12px; }
+}

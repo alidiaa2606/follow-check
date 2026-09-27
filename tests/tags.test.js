@@ -106,3 +106,23 @@ test('reload picks up changes made elsewhere (e.g. another tab)', () => {
   tab1.reload();
   assert.equal(tab1.get('alice'), 'keep');
 });
+
+test('setMany sets and clears several tags with a single save', () => {
+  const storage = memoryStorage();
+  let writes = 0;
+  const counting = { getItem: storage.getItem, setItem: (k, v) => { writes++; storage.setItem(k, v); } };
+  const store = T.createTagStore(counting);
+  store.set('a', 'keep');
+  writes = 0;
+  assert.equal(store.setMany([['a', null], ['b', 'ignore'], ['c', 'unavailable']]), true);
+  assert.equal(writes, 1);
+  assert.equal(store.get('a'), null);
+  assert.equal(store.get('b'), 'ignore');
+  assert.equal(T.createTagStore(storage).get('c'), 'unavailable');
+});
+
+test('setMany is all-or-nothing when a tag is invalid', () => {
+  const store = T.createTagStore(memoryStorage());
+  assert.throws(() => store.setMany([['a', 'keep'], ['b', 'bogus']]), /Unknown tag/);
+  assert.equal(store.get('a'), null);
+});

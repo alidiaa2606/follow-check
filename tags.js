@@ -73,6 +73,22 @@
         else throw new Error(`Unknown tag: ${tag}`);
         return save();
       },
+      /**
+       * Set or remove several tags at once, saving once. `changes` is an iterable
+       * of [username, tag | null]. Validates everything first: all or nothing.
+       */
+      setMany(changes) {
+        const list = [...changes];
+        for (const [, tag] of list) {
+          if (tag !== null && tag !== undefined && !isTag(tag)) throw new Error(`Unknown tag: ${tag}`);
+        }
+        const now = Date.now();
+        for (const [username, tag] of list) {
+          if (tag === null || tag === undefined) tags.delete(username);
+          else tags.set(username, { tag, at: now });
+        }
+        return save();
+      },
       /** Counts for a list of entries: { all, unreviewed, keep, ignore, unavailable }. */
       counts(entries) {
         const c = { all: entries.length, unreviewed: 0, keep: 0, ignore: 0, unavailable: 0 };
